@@ -118,13 +118,19 @@ class CrossStainingRegionMSA(nn.Module):
                           .any(dim=1))                        # [K]
         return tokens, valid
 
-    def _broadcast_tokens(self, tokens, H, W, N):
-        """[B,K,D] → [B,N,D]: 每个 patch 取回所属 region 的 token, 裁掉 padding。"""
+    def _broadcast_tokens(self, tokens, H, W, gs, N):
+        """[B,K,D] → [B,N,D]: 每个 patch 取回所属 region 的 token。
+
+        裁剪顺序必须与 _pad_to_grid 的两段 padding 互逆:
+        先裁掉整除 padding (网格右边列/底边行, 即 [:gs, :gs]),
+        再裁掉 squaring padding (取前 N 个) —— 直接 [:, :N] 会错位。
+        """
         B, K, D = tokens.shape
         G = self.region_num
         rs = H // G
         t = tokens.view(B, G, 1, G, 1, D).expand(B, G, rs, G, rs, D)
-        return t.reshape(B, H * W, D)[:, :N]
+        t = t.reshape(B, H, W, D)[:, :gs, :gs, :]
+        return t.reshape(B, gs * gs, D)[:, :N]
 
     # ------------------------------------------------------------------
     # Forward
@@ -146,7 +152,7 @@ class CrossStainingRegionMSA(nn.Module):
             tokens, valid = self._extract_region_tokens(grid, gs, N)
             tokens_list.append(tokens)
             valid_list.append(valid)
-            shapes.append((N, grid.shape[1], grid.shape[2]))
+            shapes.append((N, gs, grid.shape[1], grid.shape[2]))
 
         # 2. 拼接所有染色的 region token: "超级切片" 的完整区域集合
         R = torch.cat(tokens_list, dim=1)                    # [B, nK, D]
@@ -165,10 +171,10 @@ class CrossStainingRegionMSA(nn.Module):
         K = self.region_num ** 2
         out_list = []
         start = 0
-        for z, (N, H, W) in zip(z_list, shapes):
+        for z, (N, gs, H, W) in zip(z_list, shapes):
             t = R[:, start:start + K]                        # 该染色的融合 token
             start += K
-            z = z + self.fusion_gate * self._broadcast_tokens(t, H, W, N)
+            z = z + self.fusion_gate * self._broadcast_tokens(t, H, W, gs, N)
             out_list.append(z)
 
         # 5. 按染色拼接, 交给下游 MIL

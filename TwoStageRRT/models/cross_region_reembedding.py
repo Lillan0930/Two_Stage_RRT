@@ -136,7 +136,10 @@ class CrossRegionReembedding(nn.Module):
         t = t.unsqueeze(2).unsqueeze(4)
         t = t.expand(B, nH, region_size, nW, region_size, D)
         t = t.contiguous().view(B, H, W, D)
-        return t.view(B, H * W, D)[:, :N_orig, :]
+        # 与 pad_to_grid 的两段 padding 互逆: 先裁回原方阵 [:gs,:gs], 再裁前 N 个
+        gs = int(np.ceil(np.sqrt(N_orig)))
+        t = t[:, :gs, :gs, :]
+        return t.reshape(B, gs * gs, D)[:, :N_orig, :]
 
     def pad_to_grid(self, z):
         """Pad [B,N,D] to square grid divisible by region_num."""
