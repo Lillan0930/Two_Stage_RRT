@@ -1,0 +1,430 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>Two-stage Modality-aware R²T 模型结构图（染色即区域 MSA 版）</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: "Segoe UI", "Microsoft YaHei", sans-serif;
+    background: #f0f2f5;
+    display: flex; justify-content: center;
+    padding: 30px 16px;
+    color: #222;
+  }
+  .canvas { width: 1060px; }
+  h1 { text-align: center; font-size: 24px; margin-bottom: 4px; }
+  .subtitle { text-align: center; color: #666; font-size: 13px; margin-bottom: 10px; }
+
+  .update-banner {
+    background: #e8f5e9; border: 2px solid #66bb6a; border-radius: 12px;
+    padding: 14px 18px; margin-bottom: 10px; font-size: 12.5px; line-height: 1.8;
+  }
+  .update-banner b { color: #1b5e20; }
+  .update-banner .old { color: #c62828; text-decoration: line-through; }
+  .update-banner .new { color: #1b5e20; font-weight: 700; }
+  .update-banner ul { padding-left: 20px; }
+  .idea-banner {
+    background: #f3e5f5; border: 2px solid #ba68c8; border-radius: 12px;
+    padding: 14px 18px; margin-bottom: 18px; font-size: 12.5px; line-height: 1.8;
+  }
+  .idea-banner b { color: #6a1b9a; }
+  .idea-banner code { background: rgba(255,255,255,.7); padding: 0 4px; border-radius: 3px; }
+
+  .tag-legend {
+    display: flex; justify-content: center; gap: 14px; flex-wrap: wrap;
+    margin-bottom: 22px; font-size: 12.5px;
+  }
+  .tag {
+    display: inline-block; border-radius: 10px; padding: 2px 10px;
+    font-size: 11.5px; font-weight: 700; color: #fff; white-space: nowrap;
+  }
+  .t-ok   { background: #2e7d32; }
+  .t-warn { background: #f9a825; }
+  .t-bad  { background: #c62828; }
+  .t-new  { background: #6a1b9a; }
+  .t-fix  { background: #00838f; }
+
+  .stage {
+    border-radius: 12px;
+    padding: 18px 20px 22px;
+    margin-bottom: 8px;
+    position: relative;
+  }
+  .stage-title {
+    font-size: 15px; font-weight: 700; margin-bottom: 14px;
+    display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+  }
+  .badge {
+    color: #fff; font-size: 12px; border-radius: 6px;
+    padding: 2px 10px; font-weight: 600;
+  }
+  .s0 { background: #eceff1; }
+  .s0 .badge { background: #607d8b; }
+  .s1 { background: #e3f2fd; border: 2px solid #90caf9; }
+  .s1 .badge { background: #1e88e5; }
+  .s2 { background: #fff3e0; border: 2px solid #ffb74d; }
+  .s2 .badge { background: #fb8c00; }
+  .s3 { background: #e8f5e9; border: 2px solid #81c784; }
+  .s3 .badge { background: #43a047; }
+
+  .row { display: flex; justify-content: center; gap: 40px; }
+  .col { display: flex; flex-direction: column; align-items: center; gap: 6px; }
+
+  .box {
+    border-radius: 8px;
+    padding: 10px 16px;
+    text-align: center;
+    font-size: 13px;
+    line-height: 1.5;
+    box-shadow: 0 1px 3px rgba(0,0,0,.15);
+    background: #fff;
+    min-width: 200px;
+    position: relative;
+  }
+  .box b { font-size: 14px; }
+  .box .dim { color: #888; font-size: 12px; font-family: Consolas, monospace; }
+
+  .box .tag {
+    position: absolute; top: -10px; right: -8px;
+    box-shadow: 0 1px 2px rgba(0,0,0,.25);
+  }
+  .diff-note {
+    font-size: 11px; color: #b71c1c; background: #ffebee;
+    border-radius: 5px; padding: 4px 8px; margin-top: 6px; line-height: 1.5;
+    border: 1px dashed #ef9a9a;
+  }
+  .ok-note {
+    font-size: 11px; color: #1b5e20; background: #e8f5e9;
+    border-radius: 5px; padding: 4px 8px; margin-top: 6px; line-height: 1.5;
+    border: 1px dashed #a5d6a7;
+  }
+  .fix-note {
+    font-size: 11px; color: #006064; background: #e0f7fa;
+    border-radius: 5px; padding: 4px 8px; margin-top: 6px; line-height: 1.5;
+    border: 1px dashed #4dd0e1;
+  }
+  .idea-note {
+    font-size: 11px; color: #4a148c; background: #f3e5f5;
+    border-radius: 5px; padding: 4px 8px; margin-top: 6px; line-height: 1.5;
+    border: 1px dashed #ce93d8;
+  }
+
+  .input-he  { border: 2px solid #ef5350; background: #ffebee; }
+  .input-pr  { border: 2px solid #ab47bc; background: #f3e5f5; }
+  .proj      { border: 2px solid #78909c; }
+  .encoder   { border: 2px solid #1e88e5; background: #bbdefb; }
+  .sep       { border: 2px dashed #e53935; background: #ffebee; font-size: 12px; color: #b71c1c; }
+  .inner     { border: 1.5px solid #64b5f6; background: #fff; min-width: 250px; }
+  .cross     { border: 2px solid #fb8c00; background: #ffe0b2; }
+  .mil       { border: 2px solid #43a047; background: #c8e6c9; }
+  .out       { border: 2px solid #37474f; background: #37474f; color: #fff; }
+
+  .arrow { font-size: 22px; color: #546e7a; line-height: 1; }
+
+  .note {
+    font-size: 11.5px; color: #555; background: rgba(255,255,255,.75);
+    border-radius: 6px; padding: 6px 10px; margin-top: 10px;
+    border-left: 3px solid #fb8c00; line-height: 1.6;
+  }
+  .s1 .note { border-left-color: #1e88e5; }
+  .s3 .note { border-left-color: #43a047; }
+
+  table.cmp {
+    width: 100%; border-collapse: collapse; margin-top: 10px;
+    font-size: 12.5px; background: #fff;
+  }
+  table.cmp th, table.cmp td {
+    border: 1px solid #cfd8dc; padding: 7px 10px; text-align: left;
+    line-height: 1.5; vertical-align: top;
+  }
+  table.cmp th { background: #37474f; color: #fff; }
+  table.cmp tr:nth-child(even) { background: #f7f9fa; }
+  .mono { font-family: Consolas, monospace; font-size: 11.5px; }
+
+  table.params-tb {
+    width: 100%; border-collapse: collapse; margin-top: 10px;
+    font-size: 12.5px; background: #fff;
+  }
+  table.params-tb th, table.params-tb td {
+    border: 1px solid #cfd8dc; padding: 6px 10px; text-align: right;
+  }
+  table.params-tb th { background: #455a64; color: #fff; text-align: center; }
+  table.params-tb td:first-child, table.params-tb th:first-child { text-align: left; }
+  table.params-tb tr.total td { background: #e8f5e9; font-weight: 700; }
+  table.params-tb tr.ghost td { color: #9e9e9e; }
+
+  .legend {
+    display: flex; justify-content: center; gap: 18px; flex-wrap: wrap;
+    margin-top: 18px; font-size: 12px; color: #555;
+  }
+  .legend span::before {
+    content: ""; display: inline-block; width: 12px; height: 12px;
+    border-radius: 3px; margin-right: 5px; vertical-align: -1px;
+  }
+  .lg-he::before { background: #ef5350; }
+  .lg-pr::before { background: #ab47bc; }
+  .lg-s1::before { background: #1e88e5; }
+  .lg-s2::before { background: #fb8c00; }
+  .lg-s3::before { background: #43a047; }
+  .params { text-align: center; margin-top: 14px; font-size: 13px; color: #444; }
+  .params b { color: #d81b60; }
+</style>
+</head>
+<body>
+<div class="canvas">
+  <h1>Two-stage Modality-aware R²T + ABMIL <span style="font-size:14px;color:#6a1b9a">（"染色即区域" MSA 版）</span></h1>
+  <div class="subtitle">C16 配置：HE + PR · input_dim=768 · mlp_dim=512 · region_num=4 · n_layers=2 · n_heads=4 · epeg_k=9 · crmsa_k=3 · crmsa_heads=8</div>
+
+  <div class="idea-banner">
+    <b>核心思想（"染色即区域" / Staining-as-Region）：</b>
+    原 R²T 的 CR-MSA 把一张切片 K 个 region token 互相融合（S(R)）。本模型把它推广到染色维度——<b>n 种染色各自 R²T 编码后，其 region token 被视为一张"虚拟超级切片"上的不同区域</b>，用同一个 MSA 完成跨染色融合。
+    计算上无需真的拼出 2D 巨网格：纯注意力对排布方式（1D 拼接 / 2D 平铺 / 3D 堆叠）置换等变，直接在堆叠的 <code>[B, nK, D]</code> token 集合上做 MSA 即与巨网格布局逐位等价；每种染色独立过 R²T（Stage 1）即对应巨网格上的组内 R-MSA。
+  </div>
+
+  <div class="update-banner">
+    <b>代码演进要点：</b>
+    <ul>
+      <li><b>f342cce（官方对齐）</b>：Stage 1 改用与官方 RRT-MIL 逐行一致的 RRTEncoder（TransLayer 封装的 CR-MSA，pre-LN+残差+DropPath）；HE/PR 编码器<span class="old">共享权重</span>→<span class="new">独立权重</span>；超参对齐官方 C16-PLIP 食谱（epeg_k=9, crmsa_k=3, crmsa_heads=8）</li>
+      <li><b>本次（Stage 2 重写）</b>：<span class="old">HE 锚定的 learned-query cross-attn（CrossRegionReembedding）</span>→<span class="new">对称的跨染色 MSA（CrossStainingRegionMSA）</span>：nK 个 region token 互相注意力；零初始化 fusion_gate；幻影区域 mask；旧版保留为 <code>stage2_type='he_anchor'</code> 消融对照</li>
+    </ul>
+  </div>
+
+  <div class="tag-legend">
+    <span class="tag t-ok">✓ 与论文/官方一致</span>
+    <span class="tag t-fix">🔧 已修复/重写</span>
+    <span class="tag t-warn">△ 超参差异</span>
+    <span class="tag t-new">★ 本项目创新（论文没有）</span>
+  </div>
+
+  <!-- Stage 0: 输入 + 投影 -->
+  <div class="stage s0">
+    <div class="stage-title"><span class="badge">输入 / 投影</span> 预提取 patch 特征（CTransPath），每模态独立投影</div>
+    <div class="row">
+      <div class="col">
+        <div class="box input-he"><b>HE 特征</b><br><span class="dim">[N₁, 768]　N ≤ 5000</span></div>
+        <div class="arrow">↓</div>
+        <div class="box proj">
+          <span class="tag t-ok">✓ 一致</span>
+          <b>patch_to_emb[0]</b><br>Linear 768→512 + ReLU + Dropout(0.25)<br><span class="dim">[N₁, 512]</span>
+          <div class="ok-note">论文附录C：FC 降至 512 维；官方 RRTMIL 同为 Linear→ReLU→Dropout</div>
+        </div>
+      </div>
+      <div class="col">
+        <div class="box input-pr"><b>PR (IHC) 特征</b><br><span class="dim">[N₂, 768]　N ≤ 5000</span></div>
+        <div class="arrow">↓</div>
+        <div class="box proj">
+          <span class="tag t-new">★ 新增</span>
+          <b>patch_to_emb[1]</b><br>Linear 768→512 + ReLU + Dropout(0.25)<br><span class="dim">[N₂, 512]</span>
+          <div class="idea-note">第二染色输入是论文没有的（论文为单模态）</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div style="text-align:center" class="arrow">↓&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;↓</div>
+
+  <!-- Stage 1: R²T Encoder -->
+  <div class="stage s1">
+    <div class="stage-title"><span class="badge">Stage 1</span> 官方 RRTEncoder ×2 —— 每种染色一个<b>独立</b>实例（与官方 rrt.py 逐行一致）
+      <span class="tag t-ok" style="margin-left:6px">✓ 已验证与官方数学等价</span>
+    </div>
+    <div class="row">
+      <div class="col">
+        <div class="box encoder">
+          <b>rrt_he（HE 编码器）</b><br>
+          <span class="dim">[1, N₁, 512] → Z_HE [1, N₁, 512]</span>
+        </div>
+        <div class="box inner">
+          <span class="tag t-ok">✓ 一致</span>
+          <b>R-MSA（TransLayer 封装）</b><br>
+          <span class="dim">LN → 区域注意力 → DropPath → +残差<br>Squaring 到 ⌈√N⌉² 网格 · 固定 region 数切分</span>
+          <div class="ok-note">与官方 TransLayer(attn='rmsa') 逐行一致：x = x + drop_path(attn(norm(x)))</div>
+          <div class="diff-note" style="color:#e65100; background:#fff8e1; border-color:#ffcc80">△ 超参：region_num=4、n_heads=4（官方默认 8、8）</div>
+        </div>
+        <div class="box inner">
+          <span class="tag t-ok">✓ 一致</span>
+          <b>EPEG 位置编码</b><br>
+          <span class="dim">α = Softmax(e + Conv1D(e))<br>(k×1) 深度卷积，按 head 分组，softmax 前相加</span>
+          <div class="ok-note">epeg_k=9，与官方 C16-PLIP 食谱一致（rmsa.py InnerAttention 与官方逐行相同）</div>
+        </div>
+        <div class="box inner">
+          <span class="tag t-ok">✓ 一致</span>
+          <b>CR-MSA（TransLayer 封装）</b><br>
+          <span class="dim">LN → CR-MSA → DropPath → +残差<br>Φ∈R^{D×3} · combine softmax(K) / dispatch softmax(P) + MinMax</span>
+          <div class="ok-note">x = x + CR-MSA(LN(x))，与论文 Eq.4 及官方一致；CR-MSA 不带 EPEG（vanilla MSA）亦与官方一致</div>
+        </div>
+        <div class="box inner">
+          <span class="tag t-ok">✓ 一致</span>
+          <b>全局捷径 + 最终 LN</b><br>
+          <span class="dim">Z = LN( CR-MSA块输出 + H )　（all_shortcut=True）</span>
+          <div class="ok-note">官方 C16 食谱同样开启 --all_shortcut；forward 与官方 rrt.py 逐行一致</div>
+        </div>
+      </div>
+      <div class="col" style="justify-content:center">
+        <div class="box sep">⇉ 两个独立实例<br>rrt_he / rrt_ihc<br><b>权重不共享</b><br><span style="font-size:11px">= 超级切片视角下的"组内 R-MSA"</span></div>
+      </div>
+      <div class="col">
+        <div class="box encoder">
+          <b>rrt_ihc（PR 编码器）</b><br>
+          <span class="dim">[1, N₂, 512] → Z_IHC [1, N₂, 512]</span>
+        </div>
+        <div class="box inner" style="visibility:hidden">占位</div>
+        <div class="box inner" style="visibility:hidden">占位</div>
+        <div class="box inner" style="visibility:hidden">占位</div>
+        <div class="box inner" style="visibility:hidden">占位</div>
+      </div>
+    </div>
+    <div class="note">mm_rrt_abmil.py:467-470 —— <code>z_he = self.rrt_he(x_emb_list[0])</code>；<code>z_ihc = self.rrt_ihc(x_emb_list[1])</code>。注意：模型仍实例化旧版 MM_RRTEncoder（self.rrt_encoder，4.47M），但本路径不使用。</div>
+  </div>
+
+  <div style="text-align:center" class="arrow">↓&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;↓</div>
+
+  <!-- Stage 2: Cross-Staining Region MSA -->
+  <div class="stage s2">
+    <div class="stage-title"><span class="badge">Stage 2</span> CrossStainingRegionMSA —— "染色即区域" 跨染色融合（cross_staining_region_msa.py）
+      <span class="tag t-new" style="margin-left:6px">★ 本项目核心创新</span>
+      <span class="tag t-fix">🔧 本版重写：HE 锚定 → 染色对称</span>
+    </div>
+    <div class="row" style="gap:14px; flex-wrap:wrap">
+      <div class="box inner" style="border-color:#ffb74d">
+        <b>① 区域摘要（每染色独立）</b><br>
+        <span class="dim">Z_m pad 成方形网格 → 切 4×4 region<br>共享注意力池化 → K=16 个 token/染色<br>R_HE [1,16,512] · R_IHC [1,16,512]</span>
+        <div class="fix-note">纯 padding 产生的<b>幻影区域</b>被检测并标记，后续 MSA 中屏蔽（key_padding_mask）</div>
+      </div>
+      <div class="arrow" style="align-self:center">→</div>
+      <div class="box cross">
+        <b>② 跨染色 MSA 融合</b><br>
+        <span class="dim">concat → R [1, 2K=32, 512]<br><b>R̂ = R + DropPath(MSA(LN(R)))</b><br>32 个 token 两两互相注意力（8 头）</span>
+        <div class="idea-note">对应 CR-MSA 的 S(R) 步骤：region token 彼此交互，染色差异被当作区域差异处理——不要求空间配准</div>
+      </div>
+      <div class="arrow" style="align-self:center">→</div>
+      <div class="box inner" style="border-color:#ffb74d">
+        <b>③ 拆回 + 门控残差注入</b><br>
+        <span class="dim">R̂ 拆回各染色 → 广播回 patch<br><b>z'_m = z_m + g·Broadcast(R̂_m)</b><br>g 零初始化（ReZero）→ 按染色拼接</span>
+        <div class="fix-note">g=0 时输出 ≡ 直接拼接两染色（恒等基线）；融合能力随训练逐渐打开</div>
+      </div>
+    </div>
+    <div class="note">输出 <code>[1, N₁+N₂, 512]</code> 交给 ABMIL。染色地位<b>完全对称</b>（无 HE 锚定）；对染色数 n 可扩展（nK token 上的 MSA 与 n 无关）。旧版 HE 锚定模块保留：<code>stage2_type='he_anchor'</code>。</div>
+  </div>
+
+  <div style="text-align:center" class="arrow">↓</div>
+
+  <!-- Stage 3: ABMIL -->
+  <div class="stage s3">
+    <div class="stage-title"><span class="badge">Stage 3</span> ABMIL —— 注意力池化聚合 + 分类（abmil.py，未改动）</div>
+    <div class="row" style="gap:14px">
+      <div class="box mil">
+        <span class="tag t-ok">✓ 一致</span>
+        <b>注意力池化</b><br>
+        <span class="dim">Linear 512→256 + Tanh + Dropout + Linear 256→1<br>softmax 得注意力权重 A [1, N₁+N₂]</span>
+        <div class="ok-note">论文 §3.3：R²T-MIL 默认采用 AB-MIL 聚合器与分类器</div>
+      </div>
+      <div class="arrow" style="align-self:center">→</div>
+      <div class="box mil">
+        <b>切片级表示</b><br>
+        <span class="dim">Z = A · Z_concat　[1, 512]</span>
+      </div>
+      <div class="arrow" style="align-self:center">→</div>
+      <div class="box mil">
+        <b>分类器</b><br>
+        <span class="dim">Linear 512→256 + ReLU + Dropout(0.5) + Linear 256→2</span>
+      </div>
+      <div class="arrow" style="align-self:center">→</div>
+      <div class="box out">
+        <b>logits [1, 2]</b><br>
+        <span class="dim" style="color:#b0bec5">normal / tumor</span>
+      </div>
+    </div>
+    <div class="note">训练损失：带逆频率类别权重的 CrossEntropy。训练超参（plateau+25 epochs+lr 1e-4+grad clip 1.0）与论文（cosine+200 epochs+lr 2e-4+无梯度裁剪）仍不同。</div>
+  </div>
+
+  <!-- 对照总结表 -->
+  <div class="stage" style="background:#fff; border:2px solid #b0bec5">
+    <div class="stage-title"><span class="badge" style="background:#37474f">总结</span> 与论文/官方逐条对照</div>
+    <table class="cmp">
+      <tr><th style="width:22%">部件</th><th style="width:30%">论文 / 官方 RRT-MIL</th><th style="width:34%">本代码</th><th style="width:14%">判定</th></tr>
+      <tr>
+        <td><b>R-MSA</b>（Squaring + 固定 region 数 + 区域内 MHA）</td>
+        <td>Eq.5 / 官方 RegionAttntion</td>
+        <td class="mono">rmsa.py RegionAttention（逐行一致）</td>
+        <td><span class="tag t-ok">✓ 一致</span></td>
+      </tr>
+      <tr>
+        <td><b>R-MSA / CR-MSA block</b>（pre-LN + 残差 + DropPath）</td>
+        <td>Eq.4 / 官方 TransLayer</td>
+        <td class="mono">rmsa.py TransLayer（逐行一致）</td>
+        <td><span class="tag t-ok">✓ 一致</span></td>
+      </tr>
+      <tr>
+        <td><b>EPEG</b>（softmax 前 1-D 深度卷积）</td>
+        <td>Eq.6 / Fig.3；官方 C16-PLIP 食谱 epeg_k=9</td>
+        <td class="mono">rmsa.py InnerAttention；epeg_k=9（逐行一致）</td>
+        <td><span class="tag t-ok">✓ 一致</span></td>
+      </tr>
+      <tr>
+        <td><b>CR-MSA 算子</b>（combine/dispatch + MinMax）</td>
+        <td>Eq.7-8 / Algorithm 1</td>
+        <td class="mono">rmsa.py CrossRegionAttention（逐行一致）</td>
+        <td><span class="tag t-ok">✓ 一致</span></td>
+      </tr>
+      <tr>
+        <td><b>CR-MSA 内部注意力</b></td>
+        <td>vanilla MSA（官方 cr_msa 的 TransLayer epeg=False）</td>
+        <td class="mono">TransLayer(attn='crmsa') 未传 epeg → 默认 False</td>
+        <td><span class="tag t-ok">✓ 一致</span></td>
+      </tr>
+      <tr>
+        <td><b>all_shortcut + 最终 LN</b></td>
+        <td>官方可选，C16 食谱开启</td>
+        <td class="mono">RRTEncoder.forward：x = norm(x + x_shortcut)</td>
+        <td><span class="tag t-ok">✓ 一致</span></td>
+      </tr>
+      <tr>
+        <td><b>region 数 / R-MSA 头数</b></td>
+        <td>官方默认 L=8，heads=8</td>
+        <td class="mono">region_num=4，n_heads=4</td>
+        <td><span class="tag t-warn">△ 超参</span></td>
+      </tr>
+      <tr>
+        <td><b>Stage 2 跨染色融合</b></td>
+        <td>无（论文/官方均为单模态）</td>
+        <td class="mono">cross_staining_region_msa.py：nK region token 上的对称 MSA（"染色即区域"），思想源自 CR-MSA 的 S(R) 在染色维度的推广</td>
+        <td><span class="tag t-new">★ 创新</span></td>
+      </tr>
+      <tr>
+        <td><b>MIL 聚合器</b></td>
+        <td>默认 AB-MIL（§3.3）</td>
+        <td class="mono">abmil.py AttentionMIL（未改动）</td>
+        <td><span class="tag t-ok">✓ 一致</span></td>
+      </tr>
+    </table>
+  </div>
+
+  <!-- 参数量 -->
+  <div class="stage" style="background:#fff; border:2px solid #b0bec5">
+    <div class="stage-title"><span class="badge" style="background:#455a64">参数量</span> 实测实例化 MM_RRT_ABMIL</div>
+    <table class="params-tb">
+      <tr><th>模块</th><th>参数量</th><th>说明</th></tr>
+      <tr><td>patch_to_emb（两染色投影）</td><td>787,456</td><td style="text-align:left">2 × Linear(768→512)</td></tr>
+      <tr><td>rrt_he（HE 官方 R²T）</td><td>2,105,896</td><td style="text-align:left">R-MSA + CR-MSA + 捷径 + LN</td></tr>
+      <tr><td>rrt_ihc（PR 官方 R²T）</td><td>2,105,896</td><td style="text-align:left">独立权重，结构与 HE 相同</td></tr>
+      <tr><td>cross_region_mod（Stage 2）</td><td>1,117,442</td><td style="text-align:left">CrossStainingRegionMSA（池化+MSA+门控）</td></tr>
+      <tr><td>mil（ABMIL）</td><td>263,427</td><td style="text-align:left">注意力池化 + 分类器</td></tr>
+      <tr class="total"><td>two_stage_region 路径实际参与运算</td><td>6,380,117（≈6.38M）</td><td style="text-align:left">上五行之和</td></tr>
+      <tr class="ghost"><td>rrt_encoder（旧版 MM_RRTEncoder）</td><td>4,472,659</td><td style="text-align:left">仍被实例化，但本路径不使用</td></tr>
+      <tr><td>模型总实例化参数</td><td>10,852,776（≈10.85M）</td><td style="text-align:left">含未使用的旧编码器</td></tr>
+    </table>
+  </div>
+
+  <div class="legend">
+    <span class="lg-he">HE 染色</span>
+    <span class="lg-pr">PR (IHC) 染色</span>
+    <span class="lg-s1">Stage 1: 官方 R²T ×2</span>
+    <span class="lg-s2">Stage 2: 跨染色 MSA 融合</span>
+    <span class="lg-s3">Stage 3: ABMIL 聚合分类</span>
+  </div>
+  <div class="params">基于 commit <b>f342cce</b> + Stage 2 重写（staining_msa）· 参数量为 CPU 实测实例化所得 · RRT 部分已与官方 RRT-MIL (DearCaat/RRT-MIL) 逐行核对，数学等价</div>
+</div>
+</body>
+</html>

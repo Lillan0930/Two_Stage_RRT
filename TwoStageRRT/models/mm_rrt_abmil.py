@@ -212,14 +212,26 @@ class MM_RRT_ABMIL(nn.Module):
         # Cross-region re-embedding (for two_stage_region)
         self.cross_region_mod = None
         if fusion_type == 'two_stage_region' and num_modalities > 1:
-            from models.cross_region_reembedding import CrossRegionReembedding
             from models.mm_rrt_encoder import RRTEncoder
-            self.cross_region_mod = CrossRegionReembedding(
-                dim=mlp_dim, crmsa_k=crmsa_k, crmsa_heads=n_heads,
-                region_num=region_num, epeg=True, epeg_k=epeg_k,
-                drop_out=trans_dropout if isinstance(trans_dropout, (int, float)) else 0.1,
-                drop_path=drop_path,
-            )
+            # Stage 2 模块选择:
+            #   'staining_msa' (默认) — "染色即区域" 跨染色 MSA 对称融合
+            #   'he_anchor'            — 旧版 HE 锚定 cross-attn (消融对照)
+            self.stage2_type = kwargs.get('stage2_type', 'staining_msa')
+            if self.stage2_type == 'staining_msa':
+                from models.cross_staining_region_msa import CrossStainingRegionMSA
+                self.cross_region_mod = CrossStainingRegionMSA(
+                    dim=mlp_dim, num_heads=crmsa_heads, region_num=region_num,
+                    drop_out=trans_dropout if isinstance(trans_dropout, (int, float)) else 0.1,
+                    drop_path=drop_path,
+                )
+            else:
+                from models.cross_region_reembedding import CrossRegionReembedding
+                self.cross_region_mod = CrossRegionReembedding(
+                    dim=mlp_dim, crmsa_k=crmsa_k, crmsa_heads=n_heads,
+                    region_num=region_num, epeg=True, epeg_k=epeg_k,
+                    drop_out=trans_dropout if isinstance(trans_dropout, (int, float)) else 0.1,
+                    drop_path=drop_path,
+                )
             # HE encoder (official R²T, independent weights)
             self.rrt_he = RRTEncoder(
                 mlp_dim=mlp_dim, region_num=region_num, n_layers=n_layers,
@@ -469,13 +481,22 @@ class MM_RRT_ABMIL(nn.Module):
             if len(z_he.shape) == 2: z_he = z_he.unsqueeze(0)
             if len(z_ihc.shape) == 2: z_ihc = z_ihc.unsqueeze(0)
 
-            # Stage 2: Cross-modality region re-embedding
-            z_final = self.cross_region_mod(z_he, z_ihc)
+            # Stage 2: cross-staining fusion
+            if self.stage2_type == 'staining_msa':
+                # "染色即区域" MSA 融合, 输出按染色拼接 [B, N_he+N_ihc, D]
+                z_final = self.cross_region_mod([z_he, z_ihc])
+                gate = float(self.cross_region_mod.fusion_gate.detach())
+                fusion_stats = {'two_stage_region': True, 'stage2': 'staining_msa',
+                                'fusion_gate': gate}
+            else:
+                # 旧版 HE 锚定 cross-attn (消融对照)
+                z_final = self.cross_region_mod(z_he, z_ihc)
+                fusion_stats = {'two_stage_region': True, 'stage2': 'he_anchor'}
 
             # Stage 3: ABMIL
             mil_result = self.mil(z_final)
             return (mil_result['logits'], torch.argmax(mil_result['logits'], dim=-1),
-                    mil_result.get('attention', None), {'two_stage_region': True})
+                    mil_result.get('attention', None), fusion_stats)
 
         # ═══ Direct cross-region (no Stage 1 R²T) — ablation ═══
         if self.direct_cross_region and len(x_emb_list) > 1:

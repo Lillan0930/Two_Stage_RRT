@@ -482,6 +482,7 @@ class Trainer:
             fusion_type=model_cfg.get('fusion_type', 'self_attention'),
             fusion_stage=model_cfg.get('fusion_stage', 'middle'),
             fusion_kwargs={},
+            stage2_type=model_cfg.get('stage2_type', 'staining_msa'),
             use_gated_fusion=model_cfg.get('use_gated_fusion', False),
             use_per_layer_fusion=model_cfg.get('use_per_layer_fusion', True),
             use_logit_fusion=model_cfg.get('use_logit_fusion', False),

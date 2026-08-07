@@ -1,0 +1,312 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>Two-stage Modality-aware R²T — 论文风格流程图</title>
+<style>
+  body { font-family: "Segoe UI", "Microsoft YaHei", sans-serif; background: #fafbfc; margin: 0; padding: 18px 10px 30px; }
+  h1 { text-align: center; font-size: 22px; margin: 6px 0 2px; color: #222; }
+  .sub { text-align: center; color: #666; font-size: 12.5px; margin-bottom: 10px; }
+  .wrap { display: flex; justify-content: center; }
+  svg { background: #fff; border: 1px solid #e0e0e0; border-radius: 10px; box-shadow: 0 2px 8px rgba(0,0,0,.06); }
+  .foot { max-width: 1900px; margin: 12px auto 0; font-size: 12.5px; color: #555; text-align: center; line-height: 1.8; }
+  .foot b { color: #d81b60; }
+  .foot code { background: #f0f0f0; padding: 0 5px; border-radius: 3px; }
+</style>
+</head>
+<body>
+<h1>Two-stage Modality-aware R²T <span style="color:#6a1b9a">（"染色即区域" Staining-as-Region）</span></h1>
+<div class="sub">C16 配置：HE + PR · input_dim=768 · mlp_dim=512 · region_num=4 · n_layers=2 · n_heads=4 · epeg_k=9 · crmsa_k=3 · crmsa_heads=8</div>
+<div class="wrap"><svg id="fig" width="1900" height="1010" viewBox="0 0 1900 1010"></svg></div>
+<div class="foot">
+  维度流：<code>[N,768] → [N,512] → Z [N,512] → region tokens [2K=32,512] → [N₁+N₂,512] → [1,512] → logits [1,2]</code><br>
+  活跃参数 <b>6,380,117（≈6.38M）</b> · 总实例化 10,852,776（含未使用的旧版 MM_RRTEncoder 4.47M） · Stage 1 与官方 RRT-MIL 逐行核对、数学等价 · Stage 2 为本项目创新（<code>stage2_type='staining_msa'</code>，旧版 <code>'he_anchor'</code> 保留作消融）
+</div>
+
+<script>
+const NS = 'http://www.w3.org/2000/svg';
+const svg = document.getElementById('fig');
+
+/* ── 基础 helper ─────────────────────────────────────────── */
+function E(tag, attrs, parent) {
+  const e = document.createElementNS(NS, tag);
+  for (const k in attrs) e.setAttribute(k, attrs[k]);
+  (parent || svg).appendChild(e);
+  return e;
+}
+function rect(x, y, w, h, fill, stroke, rx, parent, extra) {
+  return E('rect', Object.assign({ x, y, width: w, height: h, fill: fill || '#fff',
+    stroke: stroke || 'none', 'stroke-width': stroke ? 1.5 : 0, rx: rx == null ? 6 : rx }, extra || {}), parent);
+}
+function text(x, y, s, o) {
+  o = o || {};
+  const t = E('text', { x, y, 'font-size': o.size || 12, 'text-anchor': o.anchor || 'middle',
+    fill: o.fill || '#222', 'font-weight': o.weight || 'normal',
+    'font-style': o.style || 'normal',
+    'font-family': o.mono ? 'Consolas, monospace' : 'inherit' }, o.parent || svg);
+  t.textContent = s;
+  return t;
+}
+const ARROW_COLORS = { gray: '#78909c', he: '#e57373', pr: '#ab47bc', orange: '#fb8c00', green: '#43a047', blue: '#64b5f6' };
+function defs() {
+  const d = E('defs', {}, svg);
+  for (const name in ARROW_COLORS) {
+    const m = E('marker', { id: 'ah-' + name, markerWidth: 9, markerHeight: 9, refX: 7, refY: 4.5, orient: 'auto' }, d);
+    E('path', { d: 'M0,0 L9,4.5 L0,9 z', fill: ARROW_COLORS[name] }, m);
+  }
+}
+function arrow(x1, y1, x2, y2, color, w, dash) {
+  E('line', { x1, y1, x2, y2, stroke: ARROW_COLORS[color || 'gray'], 'stroke-width': w || 2,
+    'marker-end': 'url(#ah-' + (color || 'gray') + ')',
+    'stroke-dasharray': dash || 'none' }, svg);
+}
+function elbow(points, color, w, dash) {
+  const p = points.map(q => q.join(',')).join(' ');
+  E('polyline', { points: p, fill: 'none', stroke: ARROW_COLORS[color || 'gray'],
+    'stroke-width': w || 2, 'marker-end': 'url(#ah-' + (color || 'gray') + ')',
+    'stroke-dasharray': dash || 'none' }, svg);
+}
+/* n 个 token 小方块 + ··· + 末尾 1 个 */
+function tokenRow(x, y, n, fill, stroke, cell, gap, dotsAt) {
+  cell = cell || 18; gap = gap || 5;
+  let cx = x;
+  for (let i = 0; i < n; i++) { rect(cx, y, cell, cell, fill, stroke, 4); cx += cell + gap; }
+  text(cx + 8, y + cell - 4, '···', { size: 14, fill: '#90a4ae' });
+  cx += 24;
+  rect(cx, y, cell, cell, fill, stroke, 4);
+  return cx + cell;
+}
+/* 8×8 squaring 网格，按象限染 4 色 */
+const QUAD = ['#ffcc80', '#fff59d', '#90caf9', '#a5d6a7'];
+function regionGrid(x, y, cell, n) {
+  for (let r = 0; r < n; r++) for (let c = 0; c < n; c++) {
+    const q = (r < n / 2 ? 0 : 2) + (c < n / 2 ? 0 : 1);
+    rect(x + c * cell, y + r * cell, cell - 1, cell - 1, QUAD[q], '#fff', 1.5);
+  }
+}
+/* WSI 缩略图：网格底 + 组织色块 */
+function wsi(x, y, w, h, blobFill) {
+  rect(x, y, w, h, '#f5f5f5', '#b0bec5', 8);
+  for (let gx = x + 13; gx < x + w - 5; gx += 13)
+    E('line', { x1: gx, y1: y + 4, x2: gx, y2: y + h - 4, stroke: '#e3e7ea', 'stroke-width': 1 }, svg);
+  for (let gy = y + 13; gy < y + h - 5; gy += 13)
+    E('line', { x1: x + 4, y1: gy, x2: x + w - 4, y2: gy, stroke: '#e3e7ea', 'stroke-width': 1 }, svg);
+  E('ellipse', { cx: x + w * 0.42, cy: y + h * 0.45, rx: w * 0.30, ry: h * 0.28, fill: blobFill, opacity: 0.75 }, svg);
+  E('ellipse', { cx: x + w * 0.62, cy: y + h * 0.62, rx: w * 0.20, ry: h * 0.18, fill: blobFill, opacity: 0.6 }, svg);
+  E('ellipse', { cx: x + w * 0.30, cy: y + h * 0.66, rx: w * 0.12, ry: h * 0.10, fill: blobFill, opacity: 0.5 }, svg);
+}
+/* 注意力矩阵小图标 */
+function attnMatrix(x, y, cell, n) {
+  const W = [[.9,.4,.2,.1,.1,.2],[.4,.8,.3,.2,.1,.1],[.2,.3,.9,.4,.2,.1],[.1,.2,.4,.8,.3,.2],[.1,.1,.2,.3,.9,.4],[.2,.1,.1,.2,.4,.8]];
+  for (let r = 0; r < n; r++) for (let c = 0; c < n; c++)
+    rect(x + c * cell, y + r * cell, cell - 1, cell - 1, 'rgba(230,81,0,' + W[r % 6][c % 6] + ')', '#fff', 1);
+}
+function stageBox(x, y, w, h, fill, stroke) { rect(x, y, w, h, fill, stroke, 14); }
+function chip(x, y, s, fill, o) {
+  o = o || {};
+  const w = s.length * (o.size || 11) * 1.05 + 16;
+  rect(x - (o.anchorEnd ? w : 0), y - 14, w, 20, fill, 'none', 10);
+  text(x - (o.anchorEnd ? w / 2 : -w / 2 + 8), y, s, { size: o.size || 11, fill: '#fff', weight: 'bold' });
+}
+defs();
+
+/* ═══ 输入：两张 WSI ═══ */
+wsi(40, 250, 130, 150, '#ce93d8');
+text(105, 420, 'Whole Slide Image', { size: 11, fill: '#666' });
+text(105, 437, 'HE 染色', { size: 12.5, weight: 'bold', fill: '#c62828' });
+wsi(40, 600, 130, 150, '#a1887f');
+text(105, 770, 'Whole Slide Image', { size: 11, fill: '#666' });
+text(105, 787, 'PR (IHC) 染色', { size: 12.5, weight: 'bold', fill: '#6a1b9a' });
+
+/* ═══ 离线特征提取 ═══ */
+rect(210, 420, 130, 140, '#eceff1', '#90a4ae', 10);
+text(275, 462, 'Offline', { size: 13 });
+text(275, 480, 'Feature Extractor', { size: 13 });
+text(275, 500, '(CTransPath)', { size: 11, fill: '#666' });
+text(275, 524, '冻结权重', { size: 10.5, fill: '#888' });
+arrow(170, 325, 206, 458, 'gray');
+arrow(170, 675, 206, 522, 'gray');
+
+/* ═══ 特征序列 ═══ */
+text(455, 288, '[N₁, 768]', { size: 12, mono: true, fill: '#555' });
+tokenRow(380, 300, 5, '#ef9a9a', '#e57373');
+text(455, 638, '[N₂, 768]', { size: 12, mono: true, fill: '#555' });
+tokenRow(380, 650, 5, '#ce93d8', '#ab47bc');
+elbow([[340, 455], [358, 455], [358, 312], [376, 312]], 'gray');
+elbow([[340, 525], [358, 525], [358, 662], [376, 662]], 'gray');
+
+/* ═══ 投影 ═══ */
+rect(560, 285, 122, 62, '#fff', '#78909c', 8);
+text(621, 309, 'Linear 768→512', { size: 11.5, mono: true });
+text(621, 328, 'ReLU + Dropout', { size: 10.5, fill: '#666' });
+rect(560, 635, 122, 62, '#fff', '#78909c', 8);
+text(621, 659, 'Linear 768→512', { size: 11.5, mono: true });
+text(621, 678, 'ReLU + Dropout', { size: 10.5, fill: '#666' });
+text(621, 272, '每染色独立投影', { size: 10.5, fill: '#888' });
+arrow(548, 312, 556, 312, 'gray');
+arrow(548, 662, 556, 662, 'gray');
+arrow(682, 312, 742, 300, 'he');
+arrow(682, 662, 742, 640, 'pr');
+
+/* ═══ Stage 1 容器 ═══ */
+stageBox(720, 150, 440, 690, '#e3f2fd', '#90caf9');
+text(940, 178, 'Stage 1 · R²T Encoder ×2（官方实现 · 权重独立）', { size: 14.5, weight: 'bold', fill: '#0d47a1' });
+chip(1150, 172, '✓ 与官方 RRT-MIL 数学等价', '#2e7d32', { anchorEnd: true, size: 10 });
+
+/* — HE 泳道 — */
+regionGrid(755, 235, 11, 8);
+text(799, 345, 'Squaring + Partition', { size: 10.5, fill: '#555' });
+text(799, 359, '4×4 regions', { size: 10, fill: '#888', mono: true });
+arrow(847, 279, 870, 279, 'blue');
+rect(872, 240, 110, 80, '#bbdefb', '#64b5f6', 8);
+text(927, 268, 'R-MSA', { size: 13, weight: 'bold' });
+text(927, 285, 'with EPEG (k=9)', { size: 10.5, fill: '#333' });
+text(927, 303, 'LN→attn→+res', { size: 9.5, fill: '#666', mono: true });
+arrow(982, 279, 1007, 279, 'blue');
+rect(1009, 240, 110, 80, '#c8e6c9', '#81c784', 8);
+text(1064, 268, 'CR-MSA', { size: 13, weight: 'bold' });
+text(1064, 285, 'TransLayer 封装', { size: 10.5, fill: '#333' });
+text(1064, 303, 'vanilla MSA', { size: 9.5, fill: '#666', mono: true });
+arrow(1064, 320, 1064, 372, 'blue');
+text(1064, 368, 'Z_HE [N₁, 512]', { size: 11, mono: true, fill: '#0d47a1' });
+tokenRow(1009, 375, 3, '#90caf9', '#1e88e5', 16, 4);
+
+/* — 分隔线 — */
+E('line', { x1: 740, y1: 470, x2: 1140, y2: 470, stroke: '#90caf9', 'stroke-width': 1.5, 'stroke-dasharray': '6 5' }, svg);
+text(940, 464, '结构相同 · 权重独立（rrt_he / rrt_ihc）', { size: 11, fill: '#1565c0', style: 'italic' });
+
+/* — PR 泳道 — */
+regionGrid(755, 565, 11, 8);
+text(799, 675, 'Squaring + Partition', { size: 10.5, fill: '#555' });
+text(799, 689, '4×4 regions', { size: 10, fill: '#888', mono: true });
+arrow(847, 609, 870, 609, 'blue');
+rect(872, 570, 110, 80, '#bbdefb', '#64b5f6', 8);
+text(927, 598, 'R-MSA', { size: 13, weight: 'bold' });
+text(927, 615, 'with EPEG (k=9)', { size: 10.5, fill: '#333' });
+text(927, 633, 'LN→attn→+res', { size: 9.5, fill: '#666', mono: true });
+arrow(982, 609, 1007, 609, 'blue');
+rect(1009, 570, 110, 80, '#c8e6c9', '#81c784', 8);
+text(1064, 598, 'CR-MSA', { size: 13, weight: 'bold' });
+text(1064, 615, 'TransLayer 封装', { size: 10.5, fill: '#333' });
+text(1064, 633, 'vanilla MSA', { size: 9.5, fill: '#666', mono: true });
+arrow(1064, 650, 1064, 702, 'blue');
+text(1064, 698, 'Z_IHC [N₂, 512]', { size: 11, mono: true, fill: '#0d47a1' });
+tokenRow(1009, 705, 3, '#90caf9', '#1e88e5', 16, 4);
+
+/* Stage1 → Stage2 箭头（含 pool 标注） */
+elbow([[1128, 388], [1180, 388], [1180, 272], [1222, 272]], 'orange');
+elbow([[1128, 712], [1180, 712], [1180, 708], [1222, 708]], 'orange');
+text(1186, 330, 'attn', { size: 10, fill: '#ef6c00' });
+text(1186, 344, 'pool', { size: 10, fill: '#ef6c00' });
+
+/* ═══ Stage 2 容器 ═══ */
+stageBox(1200, 150, 330, 690, '#fff3e0', '#ffb74d');
+text(1365, 178, 'Stage 2 · 跨染色 MSA 融合', { size: 14.5, weight: 'bold', fill: '#e65100' });
+chip(1520, 172, '★ 染色即区域', '#6a1b9a', { anchorEnd: true, size: 10 });
+text(1365, 200, '① 区域摘要：每染色 4×4 region → K=16 token', { size: 10.5, fill: '#777' });
+
+/* HE / PR region token 条 */
+text(1230, 252, 'R_HE [16, 512]', { size: 11, mono: true, fill: '#bf360c', anchor: 'start' });
+tokenRow(1230, 260, 5, '#ffcc80', '#fb8c00');
+text(1230, 690, 'R_IHC [16, 512]', { size: 11, mono: true, fill: '#1b5e20', anchor: 'start' });
+tokenRow(1230, 698, 5, '#a5d6a7', '#43a047');
+
+/* 汇聚到拼接 token 条 */
+arrow(1310, 282, 1310, 468, 'orange');
+arrow(1310, 698, 1310, 534, 'orange');
+tokenRow(1262, 480, 3, '#ffcc80', '#fb8c00', 18, 3);
+tokenRow(1330, 480, 3, '#a5d6a7', '#43a047', 18, 3);
+E('path', { d: 'M1252,512 L1252,522 L1408,522 L1408,512', fill: 'none', stroke: '#8d6e63', 'stroke-width': 1.5 }, svg);
+text(1330, 538, 'R [2K=32, 512]（幻影区域已 mask）', { size: 10.5, mono: true, fill: '#5d4037' });
+text(1430, 490, 'concat', { size: 10.5, fill: '#8d6e63' });
+
+arrow(1330, 540, 1330, 566, 'orange');
+
+/* MSA 主框 */
+rect(1222, 566, 286, 104, '#ffe0b2', '#fb8c00', 10);
+text(1365, 588, '② 跨染色 MSA（token 两两注意力）', { size: 12.5, weight: 'bold', fill: '#bf360c' });
+attnMatrix(1240, 600, 9, 6);
+text(1302, 612, 'R̂ = R + DropPath(', { size: 11, mono: true, anchor: 'start', fill: '#4e2600' });
+text(1302, 628, '      MSA(LN(R)) )', { size: 11, mono: true, anchor: 'start', fill: '#4e2600' });
+text(1302, 648, '8 heads · pre-LN · mask', { size: 10, fill: '#795548', anchor: 'start' });
+arrow(1365, 670, 1365, 698, 'orange');
+
+/* 残差注入条 */
+rect(1222, 698, 286, 72, '#fff', '#ffb74d', 10);
+text(1365, 720, '③ z′ₘ = zₘ + g · Broadcast(R̂ₘ)', { size: 12, weight: 'bold', fill: '#4e2600' });
+E('circle', { cx: 1252, cy: 745, r: 11, fill: '#fff8e1', stroke: '#e65100', 'stroke-width': 2 }, svg);
+text(1252, 749, 'g', { size: 12, weight: 'bold', fill: '#e65100' });
+text(1270, 742, '零初始化(ReZero)', { size: 9.5, fill: '#795548', anchor: 'start' });
+text(1270, 756, '起点 = 直接拼接基线', { size: 9.5, fill: '#795548', anchor: 'start' });
+text(1498, 749, 'concat → [N₁+N₂, 512]', { size: 10.5, mono: true, fill: '#bf360c', anchor: 'end' });
+
+/* Stage2 → Stage3 肘形箭头 */
+elbow([[1508, 734], [1546, 734], [1546, 322], [1564, 322]], 'green');
+
+/* ═══ Stage 3 容器 ═══ */
+stageBox(1560, 150, 230, 690, '#e8f5e9', '#81c784');
+text(1675, 178, 'Stage 3 · ABMIL', { size: 14.5, weight: 'bold', fill: '#1b5e20' });
+chip(1780, 172, '✓ 论文默认', '#2e7d32', { anchorEnd: true, size: 10 });
+
+/* 拼接 patch 条（双色） */
+text(1675, 292, '[N₁+N₂, 512]', { size: 11.5, mono: true, fill: '#555' });
+rect(1608, 302, 16, 16, '#ffcc80', '#fb8c00', 4);
+rect(1627, 302, 16, 16, '#ffcc80', '#fb8c00', 4);
+rect(1646, 302, 16, 16, '#a5d6a7', '#43a047', 4);
+rect(1665, 302, 16, 16, '#a5d6a7', '#43a047', 4);
+text(1692, 316, '···', { size: 14, fill: '#90a4ae' });
+rect(1710, 302, 16, 16, '#a5d6a7', '#43a047', 4);
+arrow(1675, 332, 1675, 366, 'green');
+
+/* 注意力权重条形图 */
+rect(1600, 366, 150, 112, '#c8e6c9', '#81c784', 10);
+text(1675, 388, '注意力池化', { size: 12, weight: 'bold', fill: '#1b5e20' });
+text(1675, 404, 'A = Softmax(MLP(Z))', { size: 10, mono: true, fill: '#33691e' });
+const H = [22, 40, 27, 50, 14, 36, 45, 25];
+for (let i = 0; i < 8; i++)
+  rect(1618 + i * 15, 462 - H[i], 10, H[i], i < 4 ? '#fb8c00' : '#43a047', 'none', 2);
+E('line', { x1: 1612, y1: 462, x2: 1738, y2: 462, stroke: '#558b2f', 'stroke-width': 1.5 }, svg);
+arrow(1675, 478, 1675, 510, 'green');
+
+/* Σ 聚合 */
+E('circle', { cx: 1675, cy: 538, r: 26, fill: '#fff', stroke: '#43a047', 'stroke-width': 2.5 }, svg);
+text(1675, 546, 'Σ', { size: 22, weight: 'bold', fill: '#1b5e20' });
+text(1675, 584, 'Z = Σ aᵢzᵢ　[1, 512]', { size: 11, mono: true, fill: '#1b5e20' });
+arrow(1675, 590, 1675, 618, 'green');
+
+/* 分类器 */
+rect(1610, 618, 130, 64, '#fff', '#43a047', 8);
+text(1675, 642, 'Classifier', { size: 12.5, weight: 'bold' });
+text(1675, 662, '512→256→2', { size: 10.5, mono: true, fill: '#666' });
+arrow(1675, 682, 1675, 708, 'green');
+
+/* logits 输出 */
+rect(1610, 708, 130, 58, '#37474f', '#263238', 8);
+text(1675, 732, 'logits [1, 2]', { size: 12.5, weight: 'bold', fill: '#fff', mono: true });
+text(1675, 750, 'normal / tumor', { size: 10.5, fill: '#b0bec5' });
+text(1675, 800, 'loss: 类别加权 CrossEntropy', { size: 10, fill: '#888' });
+
+/* ═══ 底部图例 ═══ */
+const LY = 880;
+text(950, LY - 14, '图例', { size: 12, weight: 'bold', fill: '#555' });
+const legend = [
+  ['#ef9a9a', '#e57373', 'HE 染色'],
+  ['#ce93d8', '#ab47bc', 'PR 染色'],
+  ['#ffcc80', '#fb8c00', 'HE region / token'],
+  ['#a5d6a7', '#43a047', 'PR region / token'],
+  ['#90caf9', '#1e88e5', 'R²T 模块'],
+  ['#ffe0b2', '#fb8c00', '跨染色融合'],
+];
+let lx = 620;
+for (const [f, s, label] of legend) {
+  rect(lx, LY, 16, 16, f, s, 4);
+  text(lx + 22, LY + 13, label, { size: 11.5, fill: '#555', anchor: 'start' });
+  lx += 22 + label.length * 12 + 30;
+}
+text(950, 935, '思想：把 n 种染色视为"虚拟超级切片"上的不同区域 —— 每种染色独立 R²T（组内 R-MSA），region token 互相 MSA（跨区/跨染色融合）。3D 堆叠实现与 2D 巨网格布局计算等价。',
+  { size: 12, fill: '#666' });
+text(950, 958, 'Stage 2 对染色数 n 可扩展（nK token 上的 MSA 与 n 无关）；n=3 等奇数情形产生的幻影区域在 MSA 中被 mask。',
+  { size: 11.5, fill: '#888' });
+</script>
+</body>
+</html>
