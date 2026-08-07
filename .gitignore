@@ -1,0 +1,40 @@
+# Python
+__pycache__/
+*.py[cod]
+*.so
+*.egg-info/
+dist/
+build/
+
+# Virtual environments
+venv/
+env/
+.venv/
+
+# IDE
+.vscode/
+.idea/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Experiment outputs
+work_results/
+*.pt
+*.pth
+
+# Large data
+features_result/
+*.tar.gz
+
+# Logs
+*.log
+logs/
+
+# Checkpoints
+ckpt/
+checkpoints/
+
+# Jupyter
+.ipynb_checkpoints/
