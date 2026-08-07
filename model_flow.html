@@ -5,7 +5,7 @@
 <title>Two-stage Modality-aware R²T — 论文风格流程图</title>
 <style>
   body {
-    font-family: "Segoe UI", "Microsoft YaHei", sans-serif;
+    font-family: "Segoe UI", "PingFang SC", "Microsoft YaHei UI", "Microsoft YaHei", "Noto Sans SC", sans-serif;
     margin: 0; padding: 26px 10px 36px;
     background: linear-gradient(160deg, #f7f9fc 0%, #eef2f7 55%, #f6f3fa 100%);
     min-height: 100vh;
@@ -65,7 +65,7 @@ function text(x, y, s, o) {
   const t = E('text', { x, y, 'font-size': o.size || 12, 'text-anchor': o.anchor || 'middle',
     fill: o.fill || '#2b3644', 'font-weight': o.weight || 'normal',
     'font-style': o.style || 'normal', 'letter-spacing': o.ls || 'normal',
-    'font-family': o.mono ? 'Consolas, "Courier New", monospace' : 'inherit' }, svg);
+    'font-family': o.mono ? '"Cascadia Code", "JetBrains Mono", Consolas, monospace' : 'inherit' }, svg);
   t.textContent = s;
   return t;
 }
@@ -165,6 +165,13 @@ function chip(x, y, s, fill) {
   rect(x - w, y - 14, w, 21, fill, 'none', 10.5);
   text(x - w / 2, y + 1, s, { size: 10.5, fill: '#fff', weight: 'bold' });
 }
+/* 特性小胶囊（白底描边） */
+function mchip(x, y, s) {
+  const w = s.length * 6.2 + 14;
+  rect(x, y - 13, w, 20, '#fff', '#f0c98f', 10);
+  text(x + w / 2, y + 1, s, { size: 9.5, fill: '#8a5a18' });
+  return x + w + 6;
+}
 defs();
 
 /* ═══ 输入：两张 WSI ═══ */
@@ -256,48 +263,66 @@ tokenRow(1009, 672, 3, '#b3d5f5', '#6ea8e1', 16, 4);
 /* Stage1 底部小结 */
 text(940, 812, 'R-MSA：染色内空间建模　·　CR-MSA：跨区上下文　·　all_shortcut + LN', { size: 10, fill: '#7a96b8' });
 
-/* Stage1 → Stage2 */
-elbow([[1128, 410], [1180, 410], [1180, 272], [1220, 272]], 'orange');
-elbow([[1128, 688], [1180, 688], [1180, 708], [1220, 708]], 'orange');
-text(1190, 330, 'attn', { size: 10, fill: '#e8912d' });
-text(1190, 344, 'pool', { size: 10, fill: '#e8912d' });
+/* Stage1 → Stage2（容器间隙的左侧通道走线） */
+elbow([[1128, 410], [1176, 410], [1176, 244], [1222, 244]], 'orange');
+elbow([[1128, 688], [1192, 688], [1192, 304], [1222, 304]], 'orange');
 
 /* ═══ Stage 2 容器 ═══ */
 stageBox(1200, 150, 330, 690, 'url(#gStage2)', '#f0c98f');
-text(1365, 180, 'Stage 2 · 跨染色 MSA 融合', { size: 15, weight: 'bold', fill: '#b54708', ls: '.3px' });
+text(1365, 180, 'Stage 2 · 跨染色 MSA 融合', { size: 15, weight: 'bold', fill: '#b54708', ls: '.5px' });
 chip(1522, 174, '★ 染色即区域', '#8e24aa');
-text(1365, 200, '① 区域摘要：每染色 4×4 region → K=16 token', { size: 10, fill: '#a08060' });
+text(1365, 201, '① 区域摘要（attn pool）：每染色 4×4 region → K=16 token', { size: 10, fill: '#a08060' });
 
-text(1230, 252, 'R_HE [16, 512]', { size: 11, mono: true, fill: '#b54708', anchor: 'start' });
-tokenRow(1230, 260, 5, '#ffd9a0', '#f5a623');
-text(1230, 690, 'R_IHC [16, 512]', { size: 11, mono: true, fill: '#1e5b29', anchor: 'start' });
-tokenRow(1230, 698, 5, '#bfe6c5', '#58b368');
+/* 双染色 region token 条（顶部成对卡片） */
+rect(1218, 216, 294, 50, 'rgba(255,255,255,.65)', '#f0d9b5', 10);
+text(1232, 233, 'R_HE [16, 512]', { size: 10.5, mono: true, fill: '#b54708', anchor: 'start' });
+tokenRow(1280, 240, 4, '#ffd9a0', '#f5a623', 17, 6);
+rect(1218, 276, 294, 50, 'rgba(255,255,255,.65)', '#d9ecd9', 10);
+text(1232, 293, 'R_IHC [16, 512]', { size: 10.5, mono: true, fill: '#1e5b29', anchor: 'start' });
+tokenRow(1280, 300, 4, '#bfe6c5', '#58b368', 17, 6);
 
-carrow(1310, 282, 1310, 466, 'orange', 0);
-carrow(1310, 696, 1310, 536, 'orange', 0);
-tokenRow(1262, 480, 3, '#ffd9a0', '#f5a623', 18, 3);
-tokenRow(1330, 480, 3, '#bfe6c5', '#58b368', 18, 3);
-E('path', { d: 'M1252,514 Q1252,524 1262,524 L1398,524 Q1408,524 1408,514', fill: 'none', stroke: '#a1887f', 'stroke-width': 1.6, 'stroke-linecap': 'round' }, svg);
-text(1330, 540, 'R [2K=32, 512] · 幻影区域已 mask', { size: 10, mono: true, fill: '#6d4c41' });
-carrow(1330, 546, 1330, 568, 'orange', 0);
+/* 汇聚弧线 → 拼接卡 */
+carrow(1340, 268, 1330, 366, 'orange', -8);
+carrow(1390, 328, 1370, 366, 'orange', 8);
+rect(1252, 370, 226, 56, '#ffffff', '#e8cfa5', 10, { filter: 'url(#soft)' });
+rect(1272, 382, 16, 16, '#ffd9a0', '#f5a623', 5);
+rect(1291, 382, 16, 16, '#ffd9a0', '#f5a623', 5);
+rect(1310, 382, 16, 16, '#ffd9a0', '#f5a623', 5);
+rect(1333, 382, 16, 16, '#bfe6c5', '#58b368', 5);
+rect(1352, 382, 16, 16, '#bfe6c5', '#58b368', 5);
+rect(1371, 382, 16, 16, '#bfe6c5', '#58b368', 5);
+text(1398, 396, '···', { size: 13, fill: '#b0bec5' });
+rect(1414, 382, 16, 16, '#bfe6c5', '#58b368', 5);
+text(1365, 417, 'R [2K=32, 512] · 幻影区域已 mask', { size: 9.5, mono: true, fill: '#8d6e63' });
+carrow(1365, 428, 1365, 453, 'orange', 0);
 
-rect(1222, 568, 286, 104, '#ffedd2', '#f5a623', 12, { filter: 'url(#soft)' });
-text(1365, 590, '② 跨染色 MSA（token 两两注意力）', { size: 12.5, weight: 'bold', fill: '#8a3c06' });
-attnMatrix(1240, 602, 9, 6);
-text(1304, 614, 'R̂ = R + DropPath(', { size: 11, mono: true, anchor: 'start', fill: '#5d3a0e' });
-text(1304, 630, '      MSA(LN(R)) )', { size: 11, mono: true, anchor: 'start', fill: '#5d3a0e' });
-text(1304, 650, '8 heads · pre-LN · mask', { size: 10, fill: '#8d6e63', anchor: 'start' });
-carrow(1365, 672, 1365, 698, 'orange', 0);
+/* 核心：跨染色 MSA（视觉中心） */
+rect(1218, 455, 294, 185, '#ffedd2', '#f5a623', 14, { filter: 'url(#soft)' });
+text(1365, 482, '② 跨染色 MSA 融合', { size: 14, weight: 'bold', fill: '#8a3c06', ls: '.3px' });
+text(1365, 500, 'region token 两两互相注意力', { size: 10.5, fill: '#a08060' });
+attnMatrix(1243, 519, 10, 8);
+text(1352, 534, 'R̂ = R + DropPath(', { size: 11.5, mono: true, anchor: 'start', fill: '#5d3a0e' });
+text(1352, 552, '      MSA(LN(R)) )', { size: 11.5, mono: true, anchor: 'start', fill: '#5d3a0e' });
+let mcx = 1352;
+mcx = mchip(mcx, 590, '8 heads');
+mcx = mchip(mcx, 590, 'pre-LN');
+mchip(mcx, 590, 'mask');
+text(1365, 628, '对应 CR-MSA 的 S(R)：染色差异 ⇔ 区域差异', { size: 9.5, fill: '#a08060' });
+carrow(1365, 642, 1365, 666, 'orange', 0);
 
-rect(1222, 698, 286, 72, '#fffdf8', '#f0c98f', 12, { filter: 'url(#soft)' });
-text(1365, 721, '③ z′ₘ = zₘ + g · Broadcast(R̂ₘ)', { size: 12, weight: 'bold', fill: '#5d3a0e' });
-E('circle', { cx: 1252, cy: 745, r: 11, fill: '#fff3e0', stroke: '#e8912d', 'stroke-width': 2 }, svg);
-text(1252, 749, 'g', { size: 12, weight: 'bold', fill: '#e8912d' });
-text(1270, 742, '零初始化 (ReZero)', { size: 9.5, fill: '#8d6e63', anchor: 'start' });
-text(1270, 756, '起点 = 直接拼接基线', { size: 9.5, fill: '#8d6e63', anchor: 'start' });
-text(1498, 749, 'concat → [N₁+N₂, 512]', { size: 10.5, mono: true, fill: '#b54708', anchor: 'end' });
+/* 门控残差注入条 */
+rect(1218, 668, 294, 76, '#fffdf8', '#f0c98f', 12, { filter: 'url(#soft)' });
+text(1365, 691, '③ z′ₘ = zₘ + g · Broadcast(R̂ₘ)', { size: 12, weight: 'bold', fill: '#5d3a0e' });
+E('circle', { cx: 1246, cy: 716, r: 11, fill: '#fff3e0', stroke: '#e8912d', 'stroke-width': 2 }, svg);
+text(1246, 720, 'g', { size: 12, weight: 'bold', fill: '#e8912d' });
+text(1264, 712, '零初始化 (ReZero)', { size: 9.5, fill: '#8d6e63', anchor: 'start' });
+text(1264, 727, '起点 = 直接拼接基线', { size: 9.5, fill: '#8d6e63', anchor: 'start' });
+text(1498, 712, 'concat →', { size: 10, mono: true, fill: '#b54708', anchor: 'end' });
+text(1498, 727, '[N₁+N₂, 512]', { size: 10, mono: true, fill: '#b54708', anchor: 'end' });
+text(1365, 806, '两染色地位对称 · 对染色数 n 可扩展', { size: 10, fill: '#a08060' });
 
-elbow([[1508, 734], [1546, 734], [1546, 322], [1564, 322]], 'green');
+/* Stage2 → Stage3 肘形箭头 */
+elbow([[1512, 706], [1548, 706], [1548, 322], [1564, 322]], 'green');
 
 /* ═══ Stage 3 容器 ═══ */
 stageBox(1560, 150, 230, 690, 'url(#gStage3)', '#a5d6a7');
