@@ -264,65 +264,92 @@ tokenRow(1009, 672, 3, '#b3d5f5', '#6ea8e1', 16, 4);
 text(940, 812, 'R-MSA：染色内空间建模　·　CR-MSA：跨区上下文　·　all_shortcut + LN', { size: 10, fill: '#7a96b8' });
 
 /* Stage1 → Stage2（容器间隙的左侧通道走线） */
-elbow([[1128, 410], [1176, 410], [1176, 244], [1222, 244]], 'orange');
-elbow([[1128, 688], [1192, 688], [1192, 304], [1222, 304]], 'orange');
+elbow([[1128, 410], [1176, 410], [1176, 248], [1222, 248]], 'orange');
+elbow([[1128, 688], [1192, 688], [1192, 334], [1222, 334]], 'orange');
 
 /* ═══ Stage 2 容器 ═══ */
 stageBox(1200, 150, 330, 690, 'url(#gStage2)', '#f0c98f');
 text(1365, 180, 'Stage 2 · 跨染色 MSA 融合', { size: 15, weight: 'bold', fill: '#b54708', ls: '.5px' });
 chip(1522, 174, '★ 染色即区域', '#8e24aa');
-text(1365, 201, '① 区域摘要（attn pool）：每染色 4×4 region → K=16 token', { size: 10, fill: '#a08060' });
+text(1365, 200, '① 区域摘要：Z_m → squaring → 4×4 region → attn pool → K=16 token', { size: 9.5, fill: '#a08060' });
 
-/* 双染色 region token 条（顶部成对卡片） */
-rect(1218, 216, 294, 50, 'rgba(255,255,255,.65)', '#f0d9b5', 10);
-text(1232, 233, 'R_HE [16, 512]', { size: 10.5, mono: true, fill: '#b54708', anchor: 'start' });
-tokenRow(1280, 240, 4, '#ffd9a0', '#f5a623', 17, 6);
-rect(1218, 276, 294, 50, 'rgba(255,255,255,.65)', '#d9ecd9', 10);
-text(1232, 293, 'R_IHC [16, 512]', { size: 10.5, mono: true, fill: '#1e5b29', anchor: 'start' });
-tokenRow(1280, 300, 4, '#bfe6c5', '#58b368', 17, 6);
+/* ① HE 摘要卡：小网格 → pool → token 条 */
+rect(1218, 206, 294, 78, 'rgba(255,255,255,.65)', '#f0d9b5', 10);
+regionGrid(1230, 217, 7, 8);
+carrow(1300, 244, 1322, 244, 'orange', 0);
+text(1311, 236, 'pool', { size: 9, fill: '#e8912d' });
+text(1384, 226, 'R_HE [16, 512]', { size: 9.5, mono: true, fill: '#b54708' });
+rect(1328, 236, 15, 15, '#ffd9a0', '#f5a623', 4);
+rect(1347, 236, 15, 15, '#ffd9a0', '#f5a623', 4);
+rect(1366, 236, 15, 15, '#ffd9a0', '#f5a623', 4);
+text(1392, 249, '···', { size: 12, fill: '#b0bec5' });
+rect(1420, 236, 15, 15, '#ffd9a0', '#f5a623', 4);
+text(1230, 276, 'Z_HE [N₁,512]', { size: 9, mono: true, fill: '#9aa5b1', anchor: 'start' });
+
+/* ① PR 摘要卡 */
+rect(1218, 292, 294, 78, 'rgba(255,255,255,.65)', '#d9ecd9', 10);
+regionGrid(1230, 303, 7, 8);
+carrow(1300, 330, 1322, 330, 'orange', 0);
+text(1311, 322, 'pool', { size: 9, fill: '#e8912d' });
+text(1384, 312, 'R_IHC [16, 512]', { size: 9.5, mono: true, fill: '#1e5b29' });
+rect(1328, 322, 15, 15, '#bfe6c5', '#58b368', 4);
+rect(1347, 322, 15, 15, '#bfe6c5', '#58b368', 4);
+rect(1366, 322, 15, 15, '#bfe6c5', '#58b368', 4);
+text(1392, 335, '···', { size: 12, fill: '#b0bec5' });
+rect(1420, 322, 15, 15, '#bfe6c5', '#58b368', 4);
+text(1230, 362, 'Z_IHC [N₂,512]', { size: 9, mono: true, fill: '#9aa5b1', anchor: 'start' });
 
 /* 汇聚弧线 → 拼接卡 */
-carrow(1340, 268, 1330, 366, 'orange', -8);
-carrow(1390, 328, 1370, 366, 'orange', 8);
-rect(1252, 370, 226, 56, '#ffffff', '#e8cfa5', 10, { filter: 'url(#soft)' });
-rect(1272, 382, 16, 16, '#ffd9a0', '#f5a623', 5);
-rect(1291, 382, 16, 16, '#ffd9a0', '#f5a623', 5);
-rect(1310, 382, 16, 16, '#ffd9a0', '#f5a623', 5);
-rect(1333, 382, 16, 16, '#bfe6c5', '#58b368', 5);
-rect(1352, 382, 16, 16, '#bfe6c5', '#58b368', 5);
-rect(1371, 382, 16, 16, '#bfe6c5', '#58b368', 5);
-text(1398, 396, '···', { size: 13, fill: '#b0bec5' });
-rect(1414, 382, 16, 16, '#bfe6c5', '#58b368', 5);
-text(1365, 417, 'R [2K=32, 512] · 幻影区域已 mask', { size: 9.5, mono: true, fill: '#8d6e63' });
-carrow(1365, 428, 1365, 453, 'orange', 0);
+carrow(1400, 286, 1355, 396, 'orange', -12);
+carrow(1400, 372, 1380, 396, 'orange', 10);
+rect(1252, 400, 226, 58, '#ffffff', '#e8cfa5', 10, { filter: 'url(#soft)' });
+rect(1272, 410, 15, 15, '#ffd9a0', '#f5a623', 4);
+rect(1290, 410, 15, 15, '#ffd9a0', '#f5a623', 4);
+rect(1308, 410, 15, 15, '#ffd9a0', '#f5a623', 4);
+rect(1330, 410, 15, 15, '#bfe6c5', '#58b368', 4);
+rect(1348, 410, 15, 15, '#bfe6c5', '#58b368', 4);
+rect(1366, 410, 15, 15, '#bfe6c5', '#58b368', 4);
+text(1393, 423, '···', { size: 12, fill: '#b0bec5' });
+rect(1410, 410, 15, 15, '#bfe6c5', '#58b368', 4);
+text(1365, 445, 'R [2K=32, 512] · 幻影区域已 mask', { size: 9.5, mono: true, fill: '#8d6e63' });
+carrow(1365, 460, 1365, 484, 'orange', 0);
 
-/* 核心：跨染色 MSA（视觉中心） */
-rect(1218, 455, 294, 185, '#ffedd2', '#f5a623', 14, { filter: 'url(#soft)' });
-text(1365, 482, '② 跨染色 MSA 融合', { size: 14, weight: 'bold', fill: '#8a3c06', ls: '.3px' });
-text(1365, 500, 'region token 两两互相注意力', { size: 10.5, fill: '#a08060' });
-attnMatrix(1243, 519, 10, 8);
-text(1352, 534, 'R̂ = R + DropPath(', { size: 11.5, mono: true, anchor: 'start', fill: '#5d3a0e' });
-text(1352, 552, '      MSA(LN(R)) )', { size: 11.5, mono: true, anchor: 'start', fill: '#5d3a0e' });
-let mcx = 1352;
-mcx = mchip(mcx, 590, '8 heads');
-mcx = mchip(mcx, 590, 'pre-LN');
-mchip(mcx, 590, 'mask');
-text(1365, 628, '对应 CR-MSA 的 S(R)：染色差异 ⇔ 区域差异', { size: 9.5, fill: '#a08060' });
-carrow(1365, 642, 1365, 666, 'orange', 0);
+/* ② 核心：跨染色 MSA（视觉中心，带残差环） */
+rect(1218, 486, 294, 196, '#ffedd2', '#f5a623', 14, { filter: 'url(#soft)' });
+text(1365, 512, '② 跨染色 MSA 融合', { size: 14, weight: 'bold', fill: '#8a3c06', ls: '.3px' });
+text(1365, 529, '2K 个 region token 两两互相注意力', { size: 10, fill: '#a08060' });
+attnMatrix(1243, 542, 10, 8);
+text(1348, 556, 'R̂ = R + DropPath(', { size: 11.5, mono: true, anchor: 'start', fill: '#5d3a0e' });
+text(1348, 574, '      MSA(LN(R)) )', { size: 11.5, mono: true, anchor: 'start', fill: '#5d3a0e' });
+let mcx = 1348;
+mcx = mchip(mcx, 596, '8 heads');
+mchip(mcx, 596, 'pre-LN');
+mchip(1348, 620, 'mask');
+text(1365, 664, '对应 CR-MSA 的 S(R)：染色差异 ⇔ 区域差异', { size: 9.5, fill: '#a08060' });
+/* 残差环：从输入绕行到输出 ⊕ */
+E('path', { d: 'M1405,490 C1472,530 1472,610 1405,676', fill: 'none', stroke: '#d09546', 'stroke-width': 1.8, 'stroke-dasharray': '5 4', 'stroke-linecap': 'round' }, svg);
+E('circle', { cx: 1405, cy: 676, r: 8, fill: '#fff', stroke: '#d09546', 'stroke-width': 1.8 }, svg);
+text(1405, 680, '+', { size: 11, weight: 'bold', fill: '#d09546' });
+text(1462, 580, '残差', { size: 9, fill: '#c08a3e' });
+carrow(1365, 682, 1365, 706, 'orange', 0);
 
-/* 门控残差注入条 */
-rect(1218, 668, 294, 76, '#fffdf8', '#f0c98f', 12, { filter: 'url(#soft)' });
-text(1365, 691, '③ z′ₘ = zₘ + g · Broadcast(R̂ₘ)', { size: 12, weight: 'bold', fill: '#5d3a0e' });
-E('circle', { cx: 1246, cy: 716, r: 11, fill: '#fff3e0', stroke: '#e8912d', 'stroke-width': 2 }, svg);
-text(1246, 720, 'g', { size: 12, weight: 'bold', fill: '#e8912d' });
-text(1264, 712, '零初始化 (ReZero)', { size: 9.5, fill: '#8d6e63', anchor: 'start' });
-text(1264, 727, '起点 = 直接拼接基线', { size: 9.5, fill: '#8d6e63', anchor: 'start' });
-text(1498, 712, 'concat →', { size: 10, mono: true, fill: '#b54708', anchor: 'end' });
-text(1498, 727, '[N₁+N₂, 512]', { size: 10, mono: true, fill: '#b54708', anchor: 'end' });
-text(1365, 806, '两染色地位对称 · 对染色数 n 可扩展', { size: 10, fill: '#a08060' });
+/* ③ 门控残差注入 + 广播 */
+rect(1218, 706, 294, 100, '#fffdf8', '#f0c98f', 12, { filter: 'url(#soft)' });
+text(1365, 728, '③ z′ₘ = zₘ + g · Broadcast(R̂ₘ)', { size: 12, weight: 'bold', fill: '#5d3a0e' });
+E('circle', { cx: 1246, cy: 754, r: 11, fill: '#fff3e0', stroke: '#e8912d', 'stroke-width': 2 }, svg);
+text(1246, 758, 'g', { size: 12, weight: 'bold', fill: '#e8912d' });
+text(1264, 750, '零初始化 (ReZero)', { size: 9.5, fill: '#8d6e63', anchor: 'start' });
+text(1264, 765, '起点 = 直接拼接基线', { size: 9.5, fill: '#8d6e63', anchor: 'start' });
+rect(1382, 744, 14, 14, '#ffd9a0', '#f5a623', 4);
+rect(1399, 744, 14, 14, '#ffd9a0', '#f5a623', 4);
+rect(1416, 744, 14, 14, '#bfe6c5', '#58b368', 4);
+rect(1433, 744, 14, 14, '#bfe6c5', '#58b368', 4);
+text(1456, 756, '···', { size: 11, fill: '#b0bec5' });
+text(1420, 780, 'concat → [N₁+N₂, 512]', { size: 9.5, mono: true, fill: '#b54708' });
+text(1365, 826, '两染色地位对称 · 对染色数 n 可扩展', { size: 10, fill: '#a08060' });
 
 /* Stage2 → Stage3 肘形箭头 */
-elbow([[1512, 706], [1548, 706], [1548, 322], [1564, 322]], 'green');
+elbow([[1512, 756], [1548, 756], [1548, 322], [1564, 322]], 'green');
 
 /* ═══ Stage 3 容器 ═══ */
 stageBox(1560, 150, 230, 690, 'url(#gStage3)', '#a5d6a7');
