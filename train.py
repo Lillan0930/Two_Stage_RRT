@@ -353,23 +353,19 @@ class Trainer:
 
             val_ratio = data_cfg.get('val_ratio', 0.2)
 
-            # 读取全部训练标签，按 slide_id 数字后缀确定性分层划分
+            # 真正的 StratifiedShuffleSplit（固定 random_state=42）
+            from sklearn.model_selection import StratifiedShuffleSplit
+
             full_df = pd.read_csv(data_cfg['train_label_file'])
-            # slide_id 列名可能是 'slide_id' 或第一列
             id_col = 'slide_id' if 'slide_id' in full_df.columns else full_df.columns[0]
             label_col = 'label' if 'label' in full_df.columns else full_df.columns[1]
 
-            # 提取数字后缀用于确定性排序
-            full_df['_num'] = full_df[id_col].astype(str).str.extract(r'(\d+)$').astype(int)
-
-            val_indices = []
-            for lbl, group in full_df.groupby(label_col):
-                group_sorted = group.sort_values('_num')
-                n_val = max(1, int(len(group_sorted) * val_ratio))
-                val_indices.extend(group_sorted.tail(n_val).index)
-
-            val_df = full_df.loc[val_indices].drop(columns=['_num'])
-            train_df = full_df.drop(val_indices).drop(columns=['_num'])
+            splitter = StratifiedShuffleSplit(
+                n_splits=1, test_size=val_ratio, random_state=42,
+            )
+            train_idx, val_idx = next(splitter.split(full_df, full_df[label_col]))
+            train_df = full_df.iloc[train_idx].reset_index(drop=True)
+            val_df = full_df.iloc[val_idx].reset_index(drop=True)
 
             self.logger.info(
                 f"C16 stratified split: train={len(train_df)}, val={len(val_df)} "
