@@ -209,6 +209,20 @@ class MM_RRT_ABMIL(nn.Module):
         self.rrt_he = None   # official RRTEncoder for HE
         self.rrt_ihc = None  # official RRTEncoder for IHC (always independent)
 
+        # ── Single-modality HE-only: official RRTEncoder ──
+        # Uses the same TransLayer-wrapped R²T as two_stage_region HE branch,
+        # ensuring a fair HE-only baseline (not MM_RRTEncoder with bare CR-MSA).
+        if num_modalities == 1:
+            from models.mm_rrt_encoder import RRTEncoder
+            self.rrt_he = RRTEncoder(
+                mlp_dim=mlp_dim, region_num=region_num, n_layers=n_layers,
+                n_heads=n_heads, drop_path=drop_path, drop_out=trans_dropout,
+                epeg=epeg, epeg_k=epeg_k, crmsa_k=crmsa_k,
+                cr_msa=cr_msa, all_shortcut=all_shortcut,
+                crmsa_mlp=crmsa_mlp, crmsa_heads=crmsa_heads,
+                need_init=True,
+            )
+
         # Cross-region re-embedding (for two_stage_region)
         self.cross_region_mod = None
         if fusion_type == 'two_stage_region' and num_modalities > 1:
@@ -461,6 +475,16 @@ class MM_RRT_ABMIL(nn.Module):
             x_emb = self.patch_to_emb[i](xi)
             x_emb = self.dp(x_emb)
             x_emb_list.append(x_emb)
+
+        # ── Single-modality shortcut: official RRTEncoder → MIL ──
+        if self.num_modalities == 1:
+            z = self.rrt_he(x_emb_list[0])
+            if len(z.shape) == 2:
+                z = z.unsqueeze(0)
+            mil_result = self.mil(z)
+            return (mil_result['logits'],
+                    torch.argmax(mil_result['logits'], dim=-1),
+                    mil_result.get('attention', None), None)
 
         # ══════════════════════════════════════════════════════════
         # Instance Bag Expansion: each modality independently through

@@ -72,6 +72,7 @@ def build_config(seed, pr_dir):
             'modalities': ['HE', 'PR'],
             'dir_mapping': {'HE': 'C16_HE_features', 'PR': pr_dir},
             'input_dim': 768, 'num_classes': 2, 'max_patches': 5000, 'preload': False,
+            'val_ratio': 0.2,
         },
         'model': {
             'mil_type': 'abmil', 'mlp_dim': 512, 'dropout': 0.25, 'use_gated': False,

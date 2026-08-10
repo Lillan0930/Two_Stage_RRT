@@ -21,6 +21,7 @@ cfg = {
         'modalities': ['HE', 'PR'],
         'dir_mapping': {'HE': 'C16_HE_features', 'PR': 'C16_PR_features'},
         'input_dim': 768, 'num_classes': 2, 'max_patches': 5000, 'preload': False,
+        'val_ratio': 0.2,
     },
     'output': {'save_dir': '/tmp/ts_standalone/ckpt', 'log_dir': '/tmp/ts_standalone/logs', 'img_dir': '/tmp/ts_standalone/img'},
     'model': {

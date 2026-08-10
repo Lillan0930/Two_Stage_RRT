@@ -9,7 +9,7 @@ HE feature          IHC feature
     |                    |
 Projection          Projection
     |                    |
-R²T Encoder         R²T Encoder (shared weights)
+R²T Encoder         R²T Encoder (independent weights)
     |                    |
 Z_HE [B,N,D]        Z_IHC [B,N,D]
     \                  /
