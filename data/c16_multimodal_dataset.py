@@ -6,6 +6,7 @@ C16 Multimodal Feature Dataset
 """
 
 import os
+import numpy as np
 import torch
 import pandas as pd
 from pathlib import Path
@@ -28,13 +29,17 @@ class C16MultimodalDataset:
                  label_file: str,
                  max_patches: Optional[int] = None,
                  preload: bool = False,
-                 verbose: bool = True):
+                 verbose: bool = True,
+                 sampling: str = 'first',
+                 sample_seed: Optional[int] = None):
         self.feature_dirs = {k: Path(v) for k, v in feature_dirs.items()}
         self.modalities = list(feature_dirs.keys())
         self.num_modalities = len(self.modalities)
         self.max_patches = max_patches
         self.preload = preload
         self.verbose = verbose
+        self.sampling = sampling          # 'first' or 'random'
+        self.sample_seed = sample_seed    # int: deterministic seed; None: fresh random each call
 
         if verbose:
             print(f"Initializing C16MultimodalDataset with {self.num_modalities} modalities: {self.modalities}")
@@ -153,9 +158,19 @@ class C16MultimodalDataset:
                 if feat is None:
                     raise FileNotFoundError(f"Feature not found for {slide_id} in {mod}")
 
-            # 截断到 max_patches
+            # 截断/采样到 max_patches
             if self.max_patches and feat.shape[0] > self.max_patches:
-                feat = feat[:self.max_patches]
+                if self.sampling == 'random':
+                    if self.sample_seed is not None:
+                        seed = (abs(hash(slide_id)) + self.sample_seed) % (2**31 - 1)
+                        rng = np.random.RandomState(seed)
+                    else:
+                        rng = np.random.RandomState()
+                    indices = rng.choice(feat.shape[0], self.max_patches, replace=False)
+                    indices.sort()
+                    feat = feat[indices]
+                else:
+                    feat = feat[:self.max_patches]
             features[mod] = feat
 
         return {

@@ -1,0 +1,14 @@
+{
+  "experiment": "first5000",
+  "seed": 42,
+  "max_patches": 5000,
+  "sampling": "first",
+  "per_epoch_random": false,
+  "val_auc": 0.9417613636363636,
+  "best_epoch": 5,
+  "test_auc": 0.7035714285714286,
+  "test_acc": 0.5038759689922481,
+  "test_f1": 0.5492957746478873,
+  "mean_actual_patches": 4736.185185185185,
+  "train_time_s": 137.6690604686737
+}

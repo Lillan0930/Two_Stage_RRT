@@ -386,6 +386,8 @@ class Trainer:
                 max_patches=data_cfg.get('max_patches', 10000),
                 preload=data_cfg.get('preload', False),
                 verbose=True,
+                sampling=data_cfg.get('sampling', 'first'),
+                sample_seed=data_cfg.get('sample_seed', 0),
             )
             val_dataset = C16MultimodalDataset(
                 feature_dirs=feature_dirs,
@@ -393,6 +395,8 @@ class Trainer:
                 max_patches=data_cfg.get('max_patches', 10000),
                 preload=data_cfg.get('preload', False),
                 verbose=False,
+                sampling=data_cfg.get('sampling', 'first'),
+                sample_seed=data_cfg.get('sample_seed', 0),
             )
             collate_fn = c16_multimodal_collate_fn
 
