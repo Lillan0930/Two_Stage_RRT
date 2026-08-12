@@ -340,7 +340,7 @@ class Trainer:
         env_cfg = self.config['environment']
         dataset_type = data_cfg.get('dataset_type', 'c17')
 
-        # ── C16 模式：内部 stratified split（不再用 test set 做验证）──
+        # ── C16 模式 ──
         if dataset_type == 'c16':
             from data.c16_multimodal_dataset import (
                 C16MultimodalDataset, c16_multimodal_collate_fn,
@@ -351,26 +351,32 @@ class Trainer:
                 dir_mapping=data_cfg.get('dir_mapping', None)
             )
 
-            val_ratio = data_cfg.get('val_ratio', 0.2)
+            # External val file → use directly (no internal split)
+            external_val_file = data_cfg.get('val_label_file', None)
+            if external_val_file:
+                train_df = pd.read_csv(data_cfg['train_label_file'])
+                val_df = pd.read_csv(external_val_file)
+                self.logger.info(
+                    f"C16 external val: train={len(train_df)}, val={len(val_df)}"
+                )
+            else:
+                # Internal stratified split
+                val_ratio = data_cfg.get('val_ratio', 0.2)
+                from sklearn.model_selection import StratifiedShuffleSplit
 
-            # 真正的 StratifiedShuffleSplit（固定 random_state=42）
-            from sklearn.model_selection import StratifiedShuffleSplit
+                full_df = pd.read_csv(data_cfg['train_label_file'])
+                label_col = 'label' if 'label' in full_df.columns else full_df.columns[1]
 
-            full_df = pd.read_csv(data_cfg['train_label_file'])
-            id_col = 'slide_id' if 'slide_id' in full_df.columns else full_df.columns[0]
-            label_col = 'label' if 'label' in full_df.columns else full_df.columns[1]
-
-            splitter = StratifiedShuffleSplit(
-                n_splits=1, test_size=val_ratio, random_state=42,
-            )
-            train_idx, val_idx = next(splitter.split(full_df, full_df[label_col]))
-            train_df = full_df.iloc[train_idx].reset_index(drop=True)
-            val_df = full_df.iloc[val_idx].reset_index(drop=True)
-
-            self.logger.info(
-                f"C16 stratified split: train={len(train_df)}, val={len(val_df)} "
-                f"(val_ratio={val_ratio})"
-            )
+                splitter = StratifiedShuffleSplit(
+                    n_splits=1, test_size=val_ratio, random_state=42,
+                )
+                train_idx, val_idx = next(splitter.split(full_df, full_df[label_col]))
+                train_df = full_df.iloc[train_idx].reset_index(drop=True)
+                val_df = full_df.iloc[val_idx].reset_index(drop=True)
+                self.logger.info(
+                    f"C16 stratified split: train={len(train_df)}, val={len(val_df)} "
+                    f"(val_ratio={val_ratio})"
+                )
 
             # 写临时 CSV 到 save_dir
             save_dir = Path(self.config['output']['save_dir'])
@@ -380,14 +386,17 @@ class Trainer:
             train_df.to_csv(train_csv, index=False)
             val_df.to_csv(val_csv, index=False)
 
+            train_sampling = data_cfg.get('sampling', 'first')
+            train_seed = data_cfg.get('sample_seed', 0)
             train_dataset = C16MultimodalDataset(
                 feature_dirs=feature_dirs,
                 label_file=str(train_csv),
                 max_patches=data_cfg.get('max_patches', 10000),
                 preload=data_cfg.get('preload', False),
                 verbose=True,
-                sampling=data_cfg.get('sampling', 'first'),
-                sample_seed=data_cfg.get('sample_seed', 0),
+                sampling=train_sampling,
+                sample_seed=train_seed,
+                per_epoch=(train_sampling == 'random'),
             )
             val_dataset = C16MultimodalDataset(
                 feature_dirs=feature_dirs,
@@ -395,9 +404,11 @@ class Trainer:
                 max_patches=data_cfg.get('max_patches', 10000),
                 preload=data_cfg.get('preload', False),
                 verbose=False,
-                sampling=data_cfg.get('sampling', 'first'),
-                sample_seed=data_cfg.get('sample_seed', 0),
+                sampling=train_sampling,
+                sample_seed=train_seed,
+                per_epoch=False,
             )
+            self._train_dataset = train_dataset  # for set_epoch() call
             collate_fn = c16_multimodal_collate_fn
 
             train_loader = DataLoader(
@@ -1253,6 +1264,10 @@ class Trainer:
 
             self.logger.info(f"\nEpoch {epoch + 1}/{num_epochs}")
             self.logger.info("-" * 40)
+
+            # Per-epoch random sampling: update dataset epoch
+            if hasattr(self, '_train_dataset') and hasattr(self._train_dataset, 'set_epoch'):
+                self._train_dataset.set_epoch(epoch)
 
             # 训练
             self.current_epoch = epoch
