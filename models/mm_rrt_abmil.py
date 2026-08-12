@@ -232,11 +232,11 @@ class MM_RRT_ABMIL(nn.Module):
             #   'he_anchor'            — 旧版 HE 锚定 cross-attn (消融对照)
             self.stage2_type = kwargs.get('stage2_type', 'staining_msa')
             if self.stage2_type == 'staining_msa':
-                from models.cross_staining_region_msa import CrossStainingRegionMSA
-                self.cross_region_mod = CrossStainingRegionMSA(
+                from models.cross_staining_crmsa import CrossStainingCRMSA
+                self.cross_region_mod = CrossStainingCRMSA(
                     dim=mlp_dim, num_heads=crmsa_heads, region_num=region_num,
-                    drop_out=trans_dropout if isinstance(trans_dropout, (int, float)) else 0.1,
-                    drop_path=drop_path,
+                    crmsa_k=crmsa_k, drop_out=trans_dropout if isinstance(trans_dropout, (int, float)) else 0.1,
+                    drop_path=drop_path, epeg=epeg, epeg_k=epeg_k, crmsa_mlp=crmsa_mlp,
                 )
             else:
                 from models.cross_region_reembedding import CrossRegionReembedding
@@ -507,11 +507,10 @@ class MM_RRT_ABMIL(nn.Module):
 
             # Stage 2: cross-staining fusion
             if self.stage2_type == 'staining_msa':
-                # "染色即区域" MSA 融合, 输出按染色拼接 [B, N_he+N_ihc, D]
+                # official-style cross-staining CR-MSA, output concatenated
+                # along patch dim [B, N_he+N_ihc, D]
                 z_final = self.cross_region_mod([z_he, z_ihc])
-                gate = float(self.cross_region_mod.fusion_gate.detach())
-                fusion_stats = {'two_stage_region': True, 'stage2': 'staining_msa',
-                                'fusion_gate': gate}
+                fusion_stats = {'two_stage_region': True, 'stage2': 'staining_msa'}
             else:
                 # 旧版 HE 锚定 cross-attn (消融对照)
                 z_final = self.cross_region_mod(z_he, z_ihc)
