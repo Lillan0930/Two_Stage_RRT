@@ -58,16 +58,22 @@ def main():
     print(f"  Stage2 final (concat): {tuple(out.shape)}")
     assert out.shape == (B, N_he + N_pr, dim), out.shape
 
-    # ── Routing-token shape check (logical view [B, 2*K*crmsa_k, D]) ──
+    # ── Routing-token shape check ──
     print("\n[Routing tokens]")
     with torch.no_grad():
         z_he_n = mod.norm(z_he)
         z_pr_n = mod.norm(z_pr)
         r_he = mod._combine(z_he_n)[0]            # [crmsa_k, nW*B, C]
         r_pr = mod._combine(z_pr_n)[0]
+        nW = r_he.shape[1] // B                   # regions per staining (= K)
         routing = torch.cat([r_he, r_pr], dim=1)  # [crmsa_k, 2*nW*B, C]
+        # Raw shape as fed to InnerAttention: routing-channel-major, NOT flattened
+        print(f"  raw routing tokens (input to InnerAttention): {tuple(routing.shape)}")
+        assert routing.shape == (crmsa_k, 2 * nW * B, dim), routing.shape
+        assert routing.shape[0] == crmsa_k        # first dim = crmsa_k, NOT 96
+        # Logical flattened view [B, 2*K*crmsa_k, D] (for human reading)
         logical = routing.permute(1, 0, 2).reshape(B, total_tokens, dim)
-        print(f"  region routing tokens: {tuple(logical.shape)}")
+        print(f"  logical flattened view: {tuple(logical.shape)}")
         assert logical.shape == (B, total_tokens, dim), logical.shape
 
     # ── Gradients ──

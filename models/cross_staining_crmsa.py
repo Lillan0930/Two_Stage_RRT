@@ -219,24 +219,30 @@ class CrossStainingCRMSA(nn.Module):
         routing_he, dmm_he, dw_he, rs_he, H_he, W_he, add_he = self._combine(z_he_n)
         routing_pr, dmm_pr, dw_pr, rs_pr, H_pr, W_pr, add_pr = self._combine(z_pr_n)
 
-        # Unified region set: concat routing tokens along the region axis
+        # Unified region set: concat routing tokens along the region axis.
+        # Shape stays [crmsa_k, nW*B, C] — the second dim is the set of regions
+        # (HE regions then PR regions), NOT [crmsa_k * 2·nW*B] flattened.
         routing = torch.cat([routing_he, routing_pr], dim=1)          # crmsa_k, 2·nW·B, C
 
-        # Cross-staining region attention (official InnerAttention)
+        # Cross-staining region attention (official InnerAttention):
+        # each of the crmsa_k routing channels attends over all HE+PR regions.
         routing = self.attn(routing)
 
-        # Split back into HE / PR routing tokens
+        # Split back into HE / PR routing tokens (concat order preserved)
         n_he = routing_he.shape[1]
         routing_he = routing[:, :n_he]
         routing_pr = routing[:, n_he:]
 
-        # Dispatch reconstruction (official, no broadcast)
-        out_he = self._dispatch(routing_he, dmm_he, dw_he, rs_he, H_he, W_he, add_he)
-        out_pr = self._dispatch(routing_pr, dmm_pr, dw_pr, rs_pr, H_pr, W_pr, add_pr)
+        # Dispatch reconstruction (official, no broadcast). This is the residual
+        # branch output z in the official `x = x + DropPath(z)` — the attention
+        # (combine→attention→dispatch) produces the update, the original x is
+        # added back below.
+        delta_he = self._dispatch(routing_he, dmm_he, dw_he, rs_he, H_he, W_he, add_he)
+        delta_pr = self._dispatch(routing_pr, dmm_pr, dw_pr, rs_pr, H_pr, W_pr, add_pr)
 
         # Residual (official TransLayer): x = x + DropPath(z)
-        z_he = z_he + self.drop_path(out_he)
-        z_pr = z_pr + self.drop_path(out_pr)
+        z_he = z_he + self.drop_path(delta_he)
+        z_pr = z_pr + self.drop_path(delta_pr)
 
         # Optional FFN
         if self.ffn:
