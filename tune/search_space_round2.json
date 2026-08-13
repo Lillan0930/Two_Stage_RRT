@@ -1,0 +1,8 @@
+{
+  "region_num":   {"type": "cat",   "choices": [2, 4, 8, 16]},
+  "epeg_k":       {"type": "cat",   "choices": [5, 9, 15, 25]},
+  "crmsa_k":      {"type": "cat",   "choices": [1, 3, 5, 7]},
+  "dropout":      {"type": "float", "low": 0.1,  "high": 0.5,  "log": false},
+  "lr":           {"type": "float", "low": 1e-05, "high": 0.0003, "log": true},
+  "weight_decay": {"type": "float", "low": 1e-06, "high": 0.001, "log": true}
+}

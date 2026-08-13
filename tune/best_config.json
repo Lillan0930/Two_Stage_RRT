@@ -1,0 +1,44 @@
+{
+  "study_name": "pr_rrt_tune",
+  "objective": "mean_3fold_val_auc",
+  "best_value": 0.918560606060606,
+  "best_params": {
+    "region_num": 8,
+    "epeg_k": 15,
+    "crmsa_k": 5,
+    "dropout": 0.4153175069788862,
+    "lr": 7.791793269057414e-05,
+    "weight_decay": 5.939716060484203e-06
+  },
+  "fold_aucs": [
+    0.9474,
+    0.875,
+    0.9332
+  ],
+  "fold_std": 0.0313,
+  "fixed": {
+    "mlp_dim": 512,
+    "n_layers": 2,
+    "n_heads": 4,
+    "drop_path": 0.0,
+    "trans_dropout": 0.1,
+    "epeg": true,
+    "cr_msa": true,
+    "all_shortcut": true,
+    "crmsa_heads": 8,
+    "crmsa_mlp": false,
+    "fusion_type": "two_stage_region",
+    "abmil_hidden_dim": 256
+  },
+  "data": {
+    "modality": "PR",
+    "dir_mapping": {
+      "PR": "C16_PR_features"
+    },
+    "max_patches": 2500,
+    "sample_seed": 42,
+    "n_folds": 3,
+    "val_ratio": 0.2
+  },
+  "note": "\u4e0b\u4e00\u6b65\uff1a\u628a best_params \u5199\u8fdb config.json\uff0c\u7528 5 seeds \u8dd1\u5b98\u65b9 Test\u3002"
+}
