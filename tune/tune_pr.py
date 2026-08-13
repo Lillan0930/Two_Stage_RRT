@@ -59,6 +59,8 @@ from sklearn.metrics import roc_auc_score
 import optuna
 from optuna.pruners import MedianPruner
 from optuna.samplers import TPESampler
+from optuna.distributions import CategoricalDistribution, FloatDistribution
+from optuna.trial import create_trial, TrialState
 
 from train import build_feature_dirs
 from models.mm_rrt_abmil import MM_RRT_ABMIL
@@ -118,6 +120,17 @@ def _suggest(trial, name):
     if spec["type"] == "cat":
         return trial.suggest_categorical(name, spec["choices"])
     return trial.suggest_float(name, spec["low"], spec["high"], log=spec["log"])
+
+
+def _dist_from_space():
+    """把 SPACE 转成 Optuna distribution dict（供 add_trial warm-start 用）。"""
+    dists = {}
+    for name, spec in SPACE.items():
+        if spec["type"] == "cat":
+            dists[name] = CategoricalDistribution(spec["choices"])
+        else:
+            dists[name] = FloatDistribution(spec["low"], spec["high"], log=spec["log"])
+    return dists
 
 
 def set_seed(seed=42):
@@ -282,6 +295,10 @@ def main():
                     help='MedianPruner: 前 N 个 trial 不剪枝')
     ap.add_argument('--space', type=str, default=None,
                     help='JSON 文件覆盖默认搜索空间（第二轮扩展搜索用）')
+    ap.add_argument('--warm-start-from', type=str, default=None,
+                    help='从已有 study 复制 COMPLETE trials 到新 study，warm-start TPE。'
+                         '用于第二轮扩展 categorical 空间（Optuna 禁止在原 study 改 categorical 分布）。'
+                         '需配合新的 --study-name 使用。')
     args = ap.parse_args()
 
     if args.space:
@@ -314,6 +331,27 @@ def main():
         load_if_exists=True,
     )
     print(f"Study: {args.study_name}  storage={storage}", flush=True)
+
+    # ── warm-start：从旧 study 复制 COMPLETE trials 到新 study（只在新 study 为空时执行）──
+    if args.warm_start_from and len(study.trials) == 0:
+        old = optuna.load_study(study_name=args.warm_start_from, storage=storage)
+        dists = _dist_from_space()
+        n_copied = 0
+        for t in old.trials:
+            if t.state == TrialState.COMPLETE:
+                study.add_trial(create_trial(
+                    params=t.params,
+                    distributions=dists,
+                    value=t.value,
+                    user_attrs=dict(t.user_attrs),
+                    intermediate_values=dict(t.intermediate_values),
+                ))
+                n_copied += 1
+        print(f"Warm-started from '{args.warm_start_from}': copied {n_copied} COMPLETE trials.",
+              flush=True)
+    elif args.warm_start_from:
+        print(f"Study '{args.study_name}' already has {len(study.trials)} trials — skip warm-start copy.",
+              flush=True)
 
     def objective(trial):
         region_num = _suggest(trial, 'region_num')
@@ -352,10 +390,10 @@ def main():
               flush=True)
         return mean_auc
 
-    # 支持断点续跑：只补足到 n_trials
-    finished = sum(1 for t in study.trials if t.state.is_finished())
-    remaining = max(0, args.n_trials - finished)
-    print(f"Existing finished trials: {finished}, will run {remaining} more.", flush=True)
+    # 支持断点续跑：只补足到 n_trials（含 warm-start 复制的 trial）
+    existing = len(study.trials)
+    remaining = max(0, args.n_trials - existing)
+    print(f"Existing trials: {existing}, will run {remaining} more.", flush=True)
     if remaining > 0:
         study.optimize(objective, n_trials=remaining)
 

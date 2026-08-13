@@ -59,9 +59,15 @@ nohup $PY tune/tune_pr.py --n-trials 30 --gpu 7 > tune/tune.log 2>&1 &
 # 断点续跑 / 补足到 30 trials（study 名相同会自动 load）
 $PY tune/tune_pr.py --n-trials 30 --gpu 7
 
-# 第二轮：扩展搜索空间 + warm-start（继续同一个 study，不重复第一轮）
-$PY tune/tune_pr.py --n-trials 30 --gpu 7 --space tune/search_space_round2.json
+# 第二轮：新 study + warm-start（Optuna 不允许在原 study 改 categorical 分布）
+#   n-trials = warm-start 复制的 26 + 本轮新增 30 = 56
+$PY tune/tune_pr.py --n-trials 56 --gpu 7 --space tune/search_space_round2.json \
+    --study-name pr_rrt_tune_v2 --warm-start-from pr_rrt_tune
 ```
+
+> `--n-trials` 语义 = **study 最终应包含的总 trial 数**（含 warm-start 复制的）。
+> `--warm-start-from` 会把旧 study 里所有 `COMPLETE` trial（含 value / params / fold_aucs / 中间值）
+> 复制进新的 `--study-name`，让 TPE 直接站在第一轮结果上继续，不重复探索低分区域。
 
 ## 轻量化说明
 
