@@ -227,6 +227,15 @@ class MM_RRT_ABMIL(nn.Module):
         self.cross_region_mod = None
         if fusion_type == 'two_stage_region' and num_modalities > 1:
             from models.mm_rrt_encoder import RRTEncoder
+            # per-modality encoder 结构参数 + 独立 Stage2 参数（向后兼容：缺省回退共享值）
+            encoder_cfg = kwargs.get('encoder_cfg') or {}
+            stage2_cfg = kwargs.get('stage2_cfg') or {}
+            he_cfg = encoder_cfg.get(self.modality_list[0], {})
+            ihc_cfg = encoder_cfg.get(self.modality_list[1], {}) if len(self.modality_list) > 1 else {}
+
+            def _get(cfg, key, default):
+                return cfg.get(key, default)
+
             # Stage 2 模块选择:
             #   'staining_msa' (默认) — "染色即区域" 跨染色 MSA 对称融合
             #   'he_anchor'            — 旧版 HE 锚定 cross-attn (消融对照)
@@ -234,9 +243,16 @@ class MM_RRT_ABMIL(nn.Module):
             if self.stage2_type == 'staining_msa':
                 from models.cross_staining_crmsa import CrossStainingCRMSA
                 self.cross_region_mod = CrossStainingCRMSA(
-                    dim=mlp_dim, num_heads=crmsa_heads, region_num=region_num,
-                    crmsa_k=crmsa_k, drop_out=trans_dropout if isinstance(trans_dropout, (int, float)) else 0.1,
-                    drop_path=drop_path, epeg=epeg, epeg_k=epeg_k, crmsa_mlp=crmsa_mlp,
+                    dim=mlp_dim,
+                    num_heads=_get(stage2_cfg, 'crmsa_heads', crmsa_heads),
+                    region_num=_get(stage2_cfg, 'region_num', region_num),
+                    crmsa_k=_get(stage2_cfg, 'crmsa_k', crmsa_k),
+                    drop_out=_get(stage2_cfg, 'drop_out',
+                                  trans_dropout if isinstance(trans_dropout, (int, float)) else 0.1),
+                    drop_path=_get(stage2_cfg, 'drop_path', drop_path),
+                    epeg=_get(stage2_cfg, 'epeg', epeg),
+                    epeg_k=_get(stage2_cfg, 'epeg_k', epeg_k),
+                    crmsa_mlp=_get(stage2_cfg, 'crmsa_mlp', crmsa_mlp),
                 )
             elif self.stage2_type == 'concat':
                 # Ablation: no cross-staining fusion — plain concat of Stage-1 outputs.
@@ -249,20 +265,24 @@ class MM_RRT_ABMIL(nn.Module):
                     drop_out=trans_dropout if isinstance(trans_dropout, (int, float)) else 0.1,
                     drop_path=drop_path,
                 )
-            # HE encoder (official R²T, independent weights)
+            # HE encoder (official R²T, independent weights) — 结构参数可用 encoder_cfg 覆盖
             self.rrt_he = RRTEncoder(
-                mlp_dim=mlp_dim, region_num=region_num, n_layers=n_layers,
-                n_heads=n_heads, drop_path=drop_path, drop_out=trans_dropout,
-                epeg=epeg, epeg_k=epeg_k, crmsa_k=crmsa_k,
+                mlp_dim=mlp_dim, region_num=_get(he_cfg, 'region_num', region_num),
+                n_layers=n_layers, n_heads=n_heads,
+                drop_path=drop_path, drop_out=trans_dropout,
+                epeg=epeg, epeg_k=_get(he_cfg, 'epeg_k', epeg_k),
+                crmsa_k=_get(he_cfg, 'crmsa_k', crmsa_k),
                 cr_msa=cr_msa, all_shortcut=all_shortcut,
                 crmsa_mlp=crmsa_mlp, crmsa_heads=crmsa_heads,
                 need_init=True,
             )
             # IHC encoder (official R²T, INDEPENDENT weights — never shared with HE)
             self.rrt_ihc = RRTEncoder(
-                mlp_dim=mlp_dim, region_num=region_num, n_layers=n_layers,
-                n_heads=n_heads, drop_path=drop_path, drop_out=trans_dropout,
-                epeg=epeg, epeg_k=epeg_k, crmsa_k=crmsa_k,
+                mlp_dim=mlp_dim, region_num=_get(ihc_cfg, 'region_num', region_num),
+                n_layers=n_layers, n_heads=n_heads,
+                drop_path=drop_path, drop_out=trans_dropout,
+                epeg=epeg, epeg_k=_get(ihc_cfg, 'epeg_k', epeg_k),
+                crmsa_k=_get(ihc_cfg, 'crmsa_k', crmsa_k),
                 cr_msa=cr_msa, all_shortcut=all_shortcut,
                 crmsa_mlp=crmsa_mlp, crmsa_heads=crmsa_heads,
                 need_init=True,
