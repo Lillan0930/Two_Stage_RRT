@@ -63,11 +63,12 @@ mp = dc.get("max_patches", 5000)
 sp = dc.get("sampling", "first")
 ss = dc.get("sample_seed", 0)
 
+# Test always uses fixed random (per_epoch=False) for deterministic evaluation
 test_ds = C16MultimodalDataset(
     feature_dirs=feature_dirs,
     label_file=str(PROJECT / "data/C16_labels/c16_test_labels.csv"),
     max_patches=mp if mp > 0 else None, preload=False, verbose=False,
-    sampling=sp, sample_seed=ss,
+    sampling=sp, sample_seed=ss, per_epoch=False,
 )
 test_dl = DataLoader(test_ds, batch_size=1, shuffle=False,
                      collate_fn=c16_multimodal_collate_fn, num_workers=2,
