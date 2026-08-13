@@ -238,6 +238,9 @@ class MM_RRT_ABMIL(nn.Module):
                     crmsa_k=crmsa_k, drop_out=trans_dropout if isinstance(trans_dropout, (int, float)) else 0.1,
                     drop_path=drop_path, epeg=epeg, epeg_k=epeg_k, crmsa_mlp=crmsa_mlp,
                 )
+            elif self.stage2_type == 'concat':
+                # Ablation: no cross-staining fusion — plain concat of Stage-1 outputs.
+                self.cross_region_mod = None
             else:
                 from models.cross_region_reembedding import CrossRegionReembedding
                 self.cross_region_mod = CrossRegionReembedding(
@@ -511,6 +514,10 @@ class MM_RRT_ABMIL(nn.Module):
                 # along patch dim [B, N_he+N_ihc, D]
                 z_final = self.cross_region_mod([z_he, z_ihc])
                 fusion_stats = {'two_stage_region': True, 'stage2': 'staining_msa'}
+            elif self.stage2_type == 'concat':
+                # Ablation: no cross-staining fusion — plain concat of Stage-1 outputs.
+                z_final = torch.cat([z_he, z_ihc], dim=1)
+                fusion_stats = {'two_stage_region': True, 'stage2': 'concat'}
             else:
                 # 旧版 HE 锚定 cross-attn (消融对照)
                 z_final = self.cross_region_mod(z_he, z_ihc)

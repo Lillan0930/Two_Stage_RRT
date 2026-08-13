@@ -62,6 +62,7 @@ model = MM_RRT_ABMIL(
     all_shortcut=mc.get("all_shortcut",True),
     crmsa_heads=mc.get("crmsa_heads",8), crmsa_mlp=mc.get("crmsa_mlp",False),
     fusion_type=mc.get("fusion_type","two_stage_region"),
+    stage2_type=mc.get("stage2_type","staining_msa"),
     abmil_hidden_dim=mc.get("abmil_hidden_dim",256),
 )
 model.load_state_dict(ckpt["model_state_dict"], strict=True)
