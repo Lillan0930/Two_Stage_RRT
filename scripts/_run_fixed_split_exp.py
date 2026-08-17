@@ -14,7 +14,7 @@ from sklearn.metrics import roc_auc_score, accuracy_score, f1_score, \
     recall_score, precision_score
 
 OUT_DIR = Path(sys.argv[1])
-os.environ["CUDA_VISIBLE_DEVICES"] = "7"
+os.environ["CUDA_VISIBLE_DEVICES"] = os.environ.get("EXP_GPU", "7")
 
 PROJECT = Path("/home/Public/lillan/Two_Sage_RRT-/TwoStageRRT")
 sys.path.insert(0, str(PROJECT))
@@ -53,7 +53,8 @@ num_mod = len(dc["modalities"])
 best_epoch = ckpt.get("epoch", -1)
 
 model = MM_RRT_ABMIL(
-    num_modalities=num_mod, input_dim=768, num_classes=2,
+    num_modalities=num_mod, modality_list=dc["modalities"],
+    input_dim=768, num_classes=2,
     mlp_dim=mc.get("mlp_dim",512), region_num=mc.get("region_num",4),
     n_layers=mc.get("n_layers",2), n_heads=mc.get("n_heads",4),
     drop_path=mc.get("drop_path",0.0), trans_dropout=mc.get("trans_dropout",0.1),
@@ -64,6 +65,8 @@ model = MM_RRT_ABMIL(
     fusion_type=mc.get("fusion_type","two_stage_region"),
     stage2_type=mc.get("stage2_type","staining_msa"),
     abmil_hidden_dim=mc.get("abmil_hidden_dim",256),
+    encoder_cfg=mc.get("encoder_cfg"),
+    stage2_cfg=mc.get("stage2_cfg"),
 )
 model.load_state_dict(ckpt["model_state_dict"], strict=True)
 model = model.cuda().eval()

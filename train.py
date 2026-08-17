@@ -200,7 +200,7 @@ class Trainer:
         self.val_aucs = []
 
         # 早停监控
-        early_stop_cfg = config['training']['early_stopping']
+        early_stop_cfg = config['training'].get('early_stopping', {})
         self.monitor_metric_name = early_stop_cfg.get('monitor', 'val_auc')
         self.monitor_mode = early_stop_cfg.get('mode', 'max')
         self.best_val_metric = 0.0 if self.monitor_mode == 'max' else float('inf')
@@ -351,40 +351,52 @@ class Trainer:
                 dir_mapping=data_cfg.get('dir_mapping', None)
             )
 
-            # External val file → use directly (no internal split)
-            external_val_file = data_cfg.get('val_label_file', None)
-            if external_val_file:
+            no_validation = data_cfg.get('no_validation', False)
+
+            # no_validation：官方 Train/Test 协议，直接用全量 train（无 val）
+            if no_validation:
                 train_df = pd.read_csv(data_cfg['train_label_file'])
-                val_df = pd.read_csv(external_val_file)
+                val_df = None
                 self.logger.info(
-                    f"C16 external val: train={len(train_df)}, val={len(val_df)}"
+                    f"C16 official Train/Test (no validation): train={len(train_df)}"
                 )
             else:
-                # Internal stratified split
-                val_ratio = data_cfg.get('val_ratio', 0.2)
-                from sklearn.model_selection import StratifiedShuffleSplit
+                # External val file → use directly (no internal split)
+                external_val_file = data_cfg.get('val_label_file', None)
+                if external_val_file:
+                    train_df = pd.read_csv(data_cfg['train_label_file'])
+                    val_df = pd.read_csv(external_val_file)
+                    self.logger.info(
+                        f"C16 external val: train={len(train_df)}, val={len(val_df)}"
+                    )
+                else:
+                    # Internal stratified split
+                    val_ratio = data_cfg.get('val_ratio', 0.2)
+                    from sklearn.model_selection import StratifiedShuffleSplit
 
-                full_df = pd.read_csv(data_cfg['train_label_file'])
-                label_col = 'label' if 'label' in full_df.columns else full_df.columns[1]
+                    full_df = pd.read_csv(data_cfg['train_label_file'])
+                    label_col = 'label' if 'label' in full_df.columns else full_df.columns[1]
 
-                splitter = StratifiedShuffleSplit(
-                    n_splits=1, test_size=val_ratio, random_state=42,
-                )
-                train_idx, val_idx = next(splitter.split(full_df, full_df[label_col]))
-                train_df = full_df.iloc[train_idx].reset_index(drop=True)
-                val_df = full_df.iloc[val_idx].reset_index(drop=True)
-                self.logger.info(
-                    f"C16 stratified split: train={len(train_df)}, val={len(val_df)} "
-                    f"(val_ratio={val_ratio})"
-                )
+                    splitter = StratifiedShuffleSplit(
+                        n_splits=1, test_size=val_ratio, random_state=42,
+                    )
+                    train_idx, val_idx = next(splitter.split(full_df, full_df[label_col]))
+                    train_df = full_df.iloc[train_idx].reset_index(drop=True)
+                    val_df = full_df.iloc[val_idx].reset_index(drop=True)
+                    self.logger.info(
+                        f"C16 stratified split: train={len(train_df)}, val={len(val_df)} "
+                        f"(val_ratio={val_ratio})"
+                    )
 
             # 写临时 CSV 到 save_dir
             save_dir = Path(self.config['output']['save_dir'])
             save_dir.mkdir(parents=True, exist_ok=True)
             train_csv = save_dir / 'c16_train_split.csv'
-            val_csv = save_dir / 'c16_val_split.csv'
             train_df.to_csv(train_csv, index=False)
-            val_df.to_csv(val_csv, index=False)
+            val_csv = None
+            if val_df is not None:
+                val_csv = save_dir / 'c16_val_split.csv'
+                val_df.to_csv(val_csv, index=False)
 
             train_sampling = data_cfg.get('sampling', 'first')
             train_seed = data_cfg.get('sample_seed', 0)
@@ -398,16 +410,6 @@ class Trainer:
                 sample_seed=train_seed,
                 per_epoch=(train_sampling == 'random'),
             )
-            val_dataset = C16MultimodalDataset(
-                feature_dirs=feature_dirs,
-                label_file=str(val_csv),
-                max_patches=data_cfg.get('max_patches', 10000),
-                preload=data_cfg.get('preload', False),
-                verbose=False,
-                sampling=train_sampling,
-                sample_seed=train_seed,
-                per_epoch=False,
-            )
             self._train_dataset = train_dataset  # for set_epoch() call
             collate_fn = c16_multimodal_collate_fn
 
@@ -420,18 +422,32 @@ class Trainer:
                 pin_memory=True,
                 persistent_workers=(env_cfg['num_workers'] > 0)
             )
-            val_loader = DataLoader(
-                val_dataset,
-                batch_size=train_cfg['batch_size'],
-                shuffle=False,
-                collate_fn=collate_fn,
-                num_workers=env_cfg['num_workers'],
-                pin_memory=True,
-                persistent_workers=(env_cfg['num_workers'] > 0)
-            )
+
+            val_loader = None
+            if val_df is not None:
+                val_dataset = C16MultimodalDataset(
+                    feature_dirs=feature_dirs,
+                    label_file=str(val_csv),
+                    max_patches=data_cfg.get('max_patches', 10000),
+                    preload=data_cfg.get('preload', False),
+                    verbose=False,
+                    sampling=train_sampling,
+                    sample_seed=train_seed,
+                    per_epoch=False,
+                )
+                val_loader = DataLoader(
+                    val_dataset,
+                    batch_size=train_cfg['batch_size'],
+                    shuffle=False,
+                    collate_fn=collate_fn,
+                    num_workers=env_cfg['num_workers'],
+                    pin_memory=True,
+                    persistent_workers=(env_cfg['num_workers'] > 0)
+                )
 
             self.logger.info(
-                f"Train batches: {len(train_loader)}, Val batches: {len(val_loader)}"
+                f"Train batches: {len(train_loader)}, "
+                f"Val batches: {len(val_loader) if val_loader is not None else 0}"
             )
             return train_loader, val_loader
 
@@ -551,6 +567,10 @@ class Trainer:
             freeze_mclc=model_cfg.get('freeze_mclc', False),
             he_only=model_cfg.get('he_only', False),
 
+            # Two-stage per-modality encoder + Stage2 CRMSA 独立参数（可选，缺省回退共享值）
+            encoder_cfg=model_cfg.get('encoder_cfg', None),
+            stage2_cfg=model_cfg.get('stage2_cfg', None),
+
             # MIL 参数
             mil_type=model_cfg.get('mil_type', 'abmil'),
             abmil_hidden_dim=model_cfg.get('abmil_hidden_dim', 128),
@@ -594,8 +614,27 @@ class Trainer:
         lr = train_cfg['learning_rate']
         wd = train_cfg['weight_decay']
 
+        # 差分 lr（两阶段）：Stage1 encoder vs Stage2 CR-MSA + ABMIL
+        lr_stage1 = train_cfg.get('lr_stage1', None)
+        lr_stage2 = train_cfg.get('lr_stage2', None)
+        if lr_stage1 is not None and lr_stage2 is not None:
+            stage1_prefixes = ('rrt_he.', 'rrt_ihc.', 'patch_to_emb.', 'rrt_encoder.')
+            stage1, stage2 = [], []
+            for name, p in model.named_parameters():
+                if not p.requires_grad:
+                    continue
+                if any(name.startswith(pre) for pre in stage1_prefixes):
+                    stage1.append(p)
+                else:
+                    stage2.append(p)
+            if self.aux_classifiers is not None:
+                stage2 += list(self.aux_classifiers.parameters())
+            params = [
+                {'params': stage1, 'lr': lr_stage1, 'name': 'stage1_encoder'},
+                {'params': stage2, 'lr': lr_stage2, 'name': 'stage2_crmsa_abmil'},
+            ]
         # Layer-wise LR for correction-only mode
-        if getattr(model, 'use_correction_only', False):
+        elif getattr(model, 'use_correction_only', False):
             he_encoder, correction, he_classifier, emb = [], [], [], []
             for name, p in model.named_parameters():
                 if not p.requires_grad: continue
@@ -1201,6 +1240,10 @@ class Trainer:
         # 创建数据加载器
         train_loader, val_loader = self.create_dataloaders()
 
+        # 官方 Train/Test 协议：无 val，固定轮数，存 last checkpoint
+        no_validation = (self.config['training'].get('no_validation', False)
+                         or self.config['data'].get('no_validation', False))
+
         # 创建模型
         model = self.create_model()
 
@@ -1238,7 +1281,9 @@ class Trainer:
                 self.logger.info("Using CrossEntropyLoss with auto class_weights")
 
         # 早停配置
-        early_stop_patience = self.config['training']['early_stopping']['patience']
+        early_stop_patience = self.config['training'].get(
+            'early_stopping', {}
+        ).get('patience', 10)
         early_stop_counter = 0
         num_epochs = self.config['training']['num_epochs']
 
@@ -1284,115 +1329,145 @@ class Trainer:
                 f"[{t_train:.1f}s]"
             )
 
-            # 验证
-            t0 = time.time()
-            val_loss, val_metrics = self.validate(
-                model, val_loader, criterion
-            )
-            t_val = time.time() - t0
-            val_acc = val_metrics['accuracy']
-            val_f1 = val_metrics['f1']
-            val_auc = val_metrics.get('auc', 0.0)
-            val_auc_he = val_metrics.get('auc_he', None)
-            val_auc_pr = val_metrics.get('auc_pr', None)
-            self.val_losses.append(val_loss)
-            self.val_accs.append(val_acc)
-            self.val_aucs.append(val_auc)
-            # ── Update HE reliability for KD gate ──
-            self.last_val_auc_he = val_auc_he
-            extra = ""
-            if val_auc_he is not None:
-                extra += f"AUC_HE={val_auc_he:.4f} "
-            if val_auc_pr is not None:
-                extra += f"AUC_PR={val_auc_pr:.4f} "
-            kd_w = self._get_kd_weight() if self.kd_enabled else 0.0
-            if self.kd_enabled:
-                extra += f"kd_w={kd_w:.4f} "
-            self.logger.info(
-                f"Val Loss: {val_loss:.4f}, Acc: {val_acc:.4f}, "
-                f"AUC: {val_auc:.4f}, F1: {val_f1:.4f} "
-                f"[{t_val:.1f}s]" + (f" {extra}" if extra else "")
-            )
+            if not no_validation:
+                # 验证
+                t0 = time.time()
+                val_loss, val_metrics = self.validate(
+                    model, val_loader, criterion
+                )
+                t_val = time.time() - t0
+                val_acc = val_metrics['accuracy']
+                val_f1 = val_metrics['f1']
+                val_auc = val_metrics.get('auc', 0.0)
+                val_auc_he = val_metrics.get('auc_he', None)
+                val_auc_pr = val_metrics.get('auc_pr', None)
+                self.val_losses.append(val_loss)
+                self.val_accs.append(val_acc)
+                self.val_aucs.append(val_auc)
+                # ── Update HE reliability for KD gate ──
+                self.last_val_auc_he = val_auc_he
+                extra = ""
+                if val_auc_he is not None:
+                    extra += f"AUC_HE={val_auc_he:.4f} "
+                if val_auc_pr is not None:
+                    extra += f"AUC_PR={val_auc_pr:.4f} "
+                kd_w = self._get_kd_weight() if self.kd_enabled else 0.0
+                if self.kd_enabled:
+                    extra += f"kd_w={kd_w:.4f} "
+                self.logger.info(
+                    f"Val Loss: {val_loss:.4f}, Acc: {val_acc:.4f}, "
+                    f"AUC: {val_auc:.4f}, F1: {val_f1:.4f} "
+                    f"[{t_val:.1f}s]" + (f" {extra}" if extra else "")
+                )
 
-            # 学习率调度
-            if scheduler is not None:
-                if isinstance(scheduler, optim.lr_scheduler.ReduceLROnPlateau):
-                    scheduler.step(val_auc)
+                # 学习率调度
+                if scheduler is not None:
+                    if isinstance(scheduler, optim.lr_scheduler.ReduceLROnPlateau):
+                        scheduler.step(val_auc)
+                    else:
+                        scheduler.step()
+
+                # 保存最佳模型
+                if self.monitor_metric_name == 'val_acc':
+                    monitor_metric = val_acc
+                elif self.monitor_metric_name == 'val_f1':
+                    monitor_metric = val_f1
+                elif self.monitor_metric_name == 'val_auc':
+                    monitor_metric = val_auc
+                elif self.monitor_metric_name == 'val_loss':
+                    monitor_metric = val_loss
                 else:
-                    scheduler.step()
+                    monitor_metric = val_auc
 
-            # 保存最佳模型
-            if self.monitor_metric_name == 'val_acc':
-                monitor_metric = val_acc
-            elif self.monitor_metric_name == 'val_f1':
-                monitor_metric = val_f1
-            elif self.monitor_metric_name == 'val_auc':
-                monitor_metric = val_auc
-            elif self.monitor_metric_name == 'val_loss':
-                monitor_metric = val_loss
+                is_best = (
+                    (self.monitor_mode == 'max' and monitor_metric > self.best_val_metric)
+                    or (self.monitor_mode == 'min' and monitor_metric < self.best_val_metric)
+                )
+                if is_best:
+                    self.best_val_metric = monitor_metric
+                    self.best_val_acc = val_acc
+                    self.best_val_auc = val_metrics.get('auc', 0.0)
+                    self.best_val_f1 = val_f1
+                    self.best_val_sensitivity = val_metrics.get('sensitivity_macro', 0.0)
+                    self.best_val_specificity = val_metrics.get('specificity_macro', 0.0)
+                    self.best_val_precision = val_metrics.get('precision', 0.0)
+                    self.best_epoch = epoch
+                    early_stop_counter = 0
+
+                    save_path = os.path.join(
+                        self.config['output']['save_dir'], 'best_model.pt'
+                    )
+                    checkpoint = {
+                        'epoch': epoch,
+                        'model_state_dict': model.state_dict(),
+                        'optimizer_state_dict': optimizer.state_dict(),
+                        'config': self.config,
+                        'best_val_metric': self.best_val_metric,
+                        'best_val_acc': self.best_val_acc,
+                        'best_val_auc': self.best_val_auc,
+                        'best_val_f1': self.best_val_f1,
+                        'best_val_sensitivity': self.best_val_sensitivity,
+                        'best_val_specificity': self.best_val_specificity,
+                        'best_val_precision': self.best_val_precision,
+                        'modalities': self.modalities,
+                        'num_modalities': self.num_modalities,
+                        'aux_classifiers_state': self.aux_classifiers.state_dict() if self.aux_classifiers is not None else None,
+                    }
+                    torch.save(checkpoint, save_path)
+                    self.logger.info(
+                        f"Saved best model "
+                        f"({self.monitor_metric_name}: {self.best_val_metric:.4f})"
+                    )
+                else:
+                    early_stop_counter += 1
+
+                # --- Optuna prune check ---
+                if optuna_trial is not None:
+                    optuna_trial.report(monitor_metric, epoch)
+                    if optuna_trial.should_prune():
+                        self.logger.info(f"Trial pruned at epoch {epoch + 1}")
+                        import optuna
+                        raise optuna.exceptions.TrialPruned()
+
+                # 早停检查
+                if early_stop_counter >= early_stop_patience:
+                    self.logger.info(
+                        f"Early stopping triggered after {epoch + 1} epochs"
+                    )
+                    break
             else:
-                monitor_metric = val_auc
-
-            is_best = (
-                (self.monitor_mode == 'max' and monitor_metric > self.best_val_metric)
-                or (self.monitor_mode == 'min' and monitor_metric < self.best_val_metric)
-            )
-            if is_best:
-                self.best_val_metric = monitor_metric
-                self.best_val_acc = val_acc
-                self.best_val_auc = val_metrics.get('auc', 0.0)
-                self.best_val_f1 = val_f1
-                self.best_val_sensitivity = val_metrics.get('sensitivity_macro', 0.0)
-                self.best_val_specificity = val_metrics.get('specificity_macro', 0.0)
-                self.best_val_precision = val_metrics.get('precision', 0.0)
-                self.best_epoch = epoch
-                early_stop_counter = 0
-
+                # no_validation：固定轮数训练，cosine/step 调度 + 保存 last checkpoint
+                if scheduler is not None:
+                    scheduler.step()
                 save_path = os.path.join(
                     self.config['output']['save_dir'], 'best_model.pt'
                 )
-                checkpoint = {
+                torch.save({
                     'epoch': epoch,
                     'model_state_dict': model.state_dict(),
                     'optimizer_state_dict': optimizer.state_dict(),
                     'config': self.config,
-                    'best_val_metric': self.best_val_metric,
-                    'best_val_acc': self.best_val_acc,
-                    'best_val_auc': self.best_val_auc,
-                    'best_val_f1': self.best_val_f1,
-                    'best_val_sensitivity': self.best_val_sensitivity,
-                    'best_val_specificity': self.best_val_specificity,
-                    'best_val_precision': self.best_val_precision,
                     'modalities': self.modalities,
                     'num_modalities': self.num_modalities,
                     'aux_classifiers_state': self.aux_classifiers.state_dict() if self.aux_classifiers is not None else None,
-                }
-                torch.save(checkpoint, save_path)
-                self.logger.info(
-                    f"Saved best model "
-                    f"({self.monitor_metric_name}: {self.best_val_metric:.4f})"
-                )
-            else:
-                early_stop_counter += 1
-
-            # --- Optuna prune check ---
-            if optuna_trial is not None:
-                optuna_trial.report(monitor_metric, epoch)
-                if optuna_trial.should_prune():
-                    self.logger.info(f"Trial pruned at epoch {epoch + 1}")
-                    import optuna
-                    raise optuna.exceptions.TrialPruned()
-
-            # 早停检查
-            if early_stop_counter >= early_stop_patience:
-                self.logger.info(
-                    f"Early stopping triggered after {epoch + 1} epochs"
-                )
-                break
+                }, save_path)
+                if optuna_trial is not None:
+                    optuna_trial.report(0.0, epoch)
 
             # 每个 epoch 结束后强制内存回收，防止跨 epoch 累积
             gc.collect()
             torch.cuda.empty_cache()
+
+        if no_validation:
+            # no_validation：固定轮数训练，last checkpoint 已保存，无 val 最终评估
+            self.logger.info("\n" + "=" * 60)
+            self.logger.info("Training Completed! (fixed epochs, last checkpoint)")
+            self.logger.info(f"Total Epochs: {num_epochs}")
+            self.logger.info(f"Model Params: {self.model_total_params:,}")
+            self.logger.info("=" * 60)
+            self.plot_training_curves()
+            self.logger.info("Done.")
+            return model, self.best_val_metric
 
         # 训练结束 — 加载最佳模型做最终评估
         best_model_path = os.path.join(

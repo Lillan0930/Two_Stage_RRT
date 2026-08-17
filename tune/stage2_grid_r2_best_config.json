@@ -1,0 +1,67 @@
+{
+  "objective": "mean_3fold_val_auc",
+  "best_stage2": {
+    "crmsa_k": 16,
+    "drop_path": 0.0,
+    "region_num": 4,
+    "crmsa_heads": 8,
+    "epeg": true,
+    "epeg_k": 9,
+    "crmsa_mlp": false,
+    "drop_out": 0.1
+  },
+  "best_value": 0.9209,
+  "fold_aucs": [
+    0.9105,
+    0.9148,
+    0.9375
+  ],
+  "fold_std": 0.0118,
+  "fixed_encoder_cfg": {
+    "HE": {
+      "region_num": 4,
+      "epeg_k": 9,
+      "crmsa_k": 3
+    },
+    "PR": {
+      "region_num": 8,
+      "epeg_k": 15,
+      "crmsa_k": 5
+    }
+  },
+  "fixed_shared": {
+    "mlp_dim": 512,
+    "n_layers": 2,
+    "n_heads": 4,
+    "trans_dropout": 0.1,
+    "epeg": true,
+    "cr_msa": true,
+    "all_shortcut": true,
+    "crmsa_heads": 8,
+    "crmsa_mlp": false,
+    "fusion_type": "two_stage_region",
+    "abmil_hidden_dim": 256,
+    "dropout": 0.25
+  },
+  "training": {
+    "lr_stage1": 1e-05,
+    "lr_stage2": 0.0001,
+    "weight_decay": 1e-05,
+    "num_epochs": 25,
+    "early_stop_patience": 10
+  },
+  "data": {
+    "modalities": [
+      "HE",
+      "PR"
+    ],
+    "dir_mapping": {
+      "HE": "C16_HE_features",
+      "PR": "C16_PR_features"
+    },
+    "max_patches": 2500,
+    "sample_seed": 42,
+    "n_folds": 3
+  },
+  "note": "\u4e0b\u4e00\u6b65\uff1a\u628a best_stage2 + fixed_encoder_cfg \u5199\u8fdb two-stage config.json\uff0c\u8dd1 5 seeds \u5b98\u65b9 Test\u3002"
+}

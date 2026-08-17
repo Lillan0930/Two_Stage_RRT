@@ -1,0 +1,44 @@
+{
+  "task": "ki67_rrt_abmil",
+  "modality": "Ki67",
+  "feature_dir": "C16_Ki67_features",
+  "protocol": {
+    "train": 270,
+    "val_test": 129,
+    "early_stopping_monitor": "val_auc",
+    "patience": 10,
+    "num_epochs": 80,
+    "scheduler": "cosine",
+    "seed": 42
+  },
+  "best_auc": 0.8061224489795918,
+  "best_params": {
+    "n_heads": 4,
+    "abmil_hidden_dim": 384,
+    "drop_path": 0.10138656536873439,
+    "lr": 9.985441516431213e-05,
+    "wd": 6.5193168878195e-05,
+    "label_smoothing": 0.09227005258526087
+  },
+  "best_trial_metrics": {
+    "val_acc": 0.7364341085271318,
+    "val_auc": 0.8061224489795918,
+    "val_sensitivity": 0.6688775510204081,
+    "val_specificity": 0.6688775510204081,
+    "best_epoch": 8
+  },
+  "fixed_model_params": {
+    "region_num": 8,
+    "epeg_k": 15,
+    "crmsa_k": 5,
+    "n_layers": 2,
+    "dropout": 0.25,
+    "trans_dropout": 0.1,
+    "focal_loss": false,
+    "mlp_dim": 512,
+    "crmsa_heads": 8,
+    "crmsa_mlp": false
+  },
+  "n_completed": 7,
+  "n_pruned": 23
+}

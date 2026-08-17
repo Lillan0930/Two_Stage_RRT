@@ -268,8 +268,8 @@ class MM_RRT_ABMIL(nn.Module):
             # HE encoder (official R²T, independent weights) — 结构参数可用 encoder_cfg 覆盖
             self.rrt_he = RRTEncoder(
                 mlp_dim=mlp_dim, region_num=_get(he_cfg, 'region_num', region_num),
-                n_layers=n_layers, n_heads=n_heads,
-                drop_path=drop_path, drop_out=trans_dropout,
+                n_layers=n_layers, n_heads=_get(he_cfg, 'n_heads', n_heads),
+                drop_path=_get(he_cfg, 'drop_path', drop_path), drop_out=trans_dropout,
                 epeg=epeg, epeg_k=_get(he_cfg, 'epeg_k', epeg_k),
                 crmsa_k=_get(he_cfg, 'crmsa_k', crmsa_k),
                 cr_msa=cr_msa, all_shortcut=all_shortcut,
@@ -279,8 +279,8 @@ class MM_RRT_ABMIL(nn.Module):
             # IHC encoder (official R²T, INDEPENDENT weights — never shared with HE)
             self.rrt_ihc = RRTEncoder(
                 mlp_dim=mlp_dim, region_num=_get(ihc_cfg, 'region_num', region_num),
-                n_layers=n_layers, n_heads=n_heads,
-                drop_path=drop_path, drop_out=trans_dropout,
+                n_layers=n_layers, n_heads=_get(ihc_cfg, 'n_heads', n_heads),
+                drop_path=_get(ihc_cfg, 'drop_path', drop_path), drop_out=trans_dropout,
                 epeg=epeg, epeg_k=_get(ihc_cfg, 'epeg_k', epeg_k),
                 crmsa_k=_get(ihc_cfg, 'crmsa_k', crmsa_k),
                 cr_msa=cr_msa, all_shortcut=all_shortcut,

@@ -263,7 +263,16 @@ def main():
     ap = argparse.ArgumentParser(description="Two-stage Stage2 CRMSA grid tuning")
     ap.add_argument('--gpu', type=str, default='6')
     ap.add_argument('--n-folds', type=int, default=3)
+    ap.add_argument('--crmsa-k', type=str, default=None,
+                    help="comma-separated crmsa_k choices (default: script constants)")
+    ap.add_argument('--drop-path', type=str, default=None,
+                    help="comma-separated drop_path choices (default: script constants)")
+    ap.add_argument('--out-prefix', type=str, default='stage2_grid',
+                    help="output CSV/JSON filename prefix (default: stage2_grid)")
     args = ap.parse_args()
+
+    crmsa_k_choices = CRMSA_K_CHOICES if args.crmsa_k is None else [int(x) for x in args.crmsa_k.split(',')]
+    drop_path_choices = DROP_PATH_CHOICES if args.drop_path is None else [float(x) for x in args.drop_path.split(',')]
 
     os.environ['CUDA_VISIBLE_DEVICES'] = args.gpu
     device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
@@ -275,8 +284,8 @@ def main():
     for f, (tr, va) in enumerate(folds):
         print(f"Fold {f}: train={len(tr)} val={len(va)} ({dict(va['label'].value_counts())})", flush=True)
 
-    grid = [(k, dp) for k in CRMSA_K_CHOICES for dp in DROP_PATH_CHOICES]
-    print(f"\nGrid: {len(grid)} configs = crmsa_k {CRMSA_K_CHOICES} x drop_path {DROP_PATH_CHOICES}", flush=True)
+    grid = [(k, dp) for k in crmsa_k_choices for dp in drop_path_choices]
+    print(f"\nGrid: {len(grid)} configs = crmsa_k {crmsa_k_choices} x drop_path {drop_path_choices}", flush=True)
 
     results = []
     for gi, (crmsa_k, drop_path) in enumerate(grid):
@@ -301,7 +310,7 @@ def main():
               flush=True)
 
     # ── 写 CSV ──
-    csv_path = TUNE_DIR / "stage2_grid_results.csv"
+    csv_path = TUNE_DIR / f"{args.out_prefix}_results.csv"
     with open(csv_path, "w", newline="") as f:
         w = csv.writer(f)
         w.writerow(["crmsa_k", "drop_path", "fold0", "fold1", "fold2", "mean_auc", "std_auc"])
@@ -331,11 +340,11 @@ def main():
                  "n_folds": args.n_folds},
         "note": "下一步：把 best_stage2 + fixed_encoder_cfg 写进 two-stage config.json，跑 5 seeds 官方 Test。",
     }
-    with open(TUNE_DIR / "stage2_best_config.json", "w") as f:
+    with open(TUNE_DIR / f"{args.out_prefix}_best_config.json", "w") as f:
         json.dump(best_cfg, f, indent=2)
     print(f"Best: crmsa_k={best['crmsa_k']} drop_path={best['drop_path']} "
           f"mean={best['mean_auc']} ± {best['std_auc']}", flush=True)
-    print(f"Saved -> {TUNE_DIR / 'stage2_best_config.json'}", flush=True)
+    print(f"Saved -> {TUNE_DIR / (args.out_prefix + '_best_config.json')}", flush=True)
 
 
 if __name__ == '__main__':

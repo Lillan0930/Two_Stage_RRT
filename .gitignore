@@ -38,3 +38,6 @@ checkpoints/
 
 # Jupyter
 .ipynb_checkpoints/
+
+# Feature cache
+*.npz

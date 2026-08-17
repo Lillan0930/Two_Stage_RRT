@@ -1,0 +1,79 @@
+{
+  "task": "ki67_rrt_abmil",
+  "modality": "Ki67",
+  "protocol": {
+    "train": 270,
+    "val_test": 129,
+    "monitor": "val_auc",
+    "mode": "max",
+    "patience": 10,
+    "num_epochs": 80,
+    "scheduler": "cosine",
+    "sampling": "random"
+  },
+  "seeds": [
+    42,
+    123,
+    456,
+    789,
+    1024
+  ],
+  "best_params": {
+    "n_heads": 4,
+    "abmil_hidden_dim": 384,
+    "drop_path": 0.10138656536873439,
+    "lr": 9.985441516431213e-05,
+    "wd": 6.5193168878195e-05,
+    "label_smoothing": 0.09227005258526087
+  },
+  "per_seed": [
+    {
+      "seed": 42,
+      "val_auc": 0.8061224489795918,
+      "val_acc": 0.7364341085271318,
+      "val_sensitivity": 0.6688775510204081,
+      "val_specificity": 0.6688775510204081,
+      "best_epoch": 8
+    },
+    {
+      "seed": 123,
+      "val_auc": 0.7928571428571428,
+      "val_acc": 0.7286821705426356,
+      "val_sensitivity": 0.6823979591836735,
+      "val_specificity": 0.6823979591836735,
+      "best_epoch": 29
+    },
+    {
+      "seed": 456,
+      "val_auc": 0.6622448979591837,
+      "val_acc": 0.6201550387596899,
+      "val_sensitivity": 0.5,
+      "val_specificity": 0.5,
+      "best_epoch": 3
+    },
+    {
+      "seed": 789,
+      "val_auc": 0.7466836734693877,
+      "val_acc": 0.6821705426356589,
+      "val_sensitivity": 0.6093112244897959,
+      "val_specificity": 0.6093112244897959,
+      "best_epoch": 15
+    },
+    {
+      "seed": 1024,
+      "val_auc": 0.7594387755102042,
+      "val_acc": 0.689922480620155,
+      "val_sensitivity": 0.6076530612244898,
+      "val_specificity": 0.6076530612244898,
+      "best_epoch": 14
+    }
+  ],
+  "mean_auc": 0.7534693877551021,
+  "std_auc": 0.05045260579068623,
+  "mean_acc": 0.6914728682170542,
+  "std_acc": 0.041427563460115925,
+  "mean_sensitivity": 0.6136479591836734,
+  "std_sensitivity": 0.06441657397038797,
+  "mean_specificity": 0.6136479591836734,
+  "std_specificity": 0.06441657397038797
+}

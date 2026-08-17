@@ -1,0 +1,79 @@
+{
+  "task": "er_rrt_abmil",
+  "modality": "ER",
+  "protocol": {
+    "train": 270,
+    "val_test": 129,
+    "monitor": "val_auc",
+    "mode": "max",
+    "patience": 10,
+    "num_epochs": 80,
+    "scheduler": "cosine",
+    "sampling": "random"
+  },
+  "seeds": [
+    42,
+    123,
+    456,
+    789,
+    1024
+  ],
+  "best_params": {
+    "n_heads": 2,
+    "abmil_hidden_dim": 128,
+    "drop_path": 0.165123691158681,
+    "lr": 0.00019343711842998042,
+    "wd": 6.20989490782604e-06,
+    "label_smoothing": 0.02400947576171262
+  },
+  "per_seed": [
+    {
+      "seed": 42,
+      "val_auc": 0.7737244897959183,
+      "val_acc": 0.7364341085271318,
+      "val_sensitivity": 0.657015306122449,
+      "val_specificity": 0.657015306122449,
+      "best_epoch": 13
+    },
+    {
+      "seed": 123,
+      "val_auc": 0.7612244897959184,
+      "val_acc": 0.7131782945736435,
+      "val_sensitivity": 0.6501275510204081,
+      "val_specificity": 0.6501275510204081,
+      "best_epoch": 55
+    },
+    {
+      "seed": 456,
+      "val_auc": 0.744642857142857,
+      "val_acc": 0.7209302325581395,
+      "val_sensitivity": 0.648469387755102,
+      "val_specificity": 0.648469387755102,
+      "best_epoch": 9
+    },
+    {
+      "seed": 789,
+      "val_auc": 0.7028061224489796,
+      "val_acc": 0.6511627906976745,
+      "val_sensitivity": 0.6119897959183673,
+      "val_specificity": 0.6119897959183673,
+      "best_epoch": 8
+    },
+    {
+      "seed": 1024,
+      "val_auc": 0.746938775510204,
+      "val_acc": 0.7441860465116279,
+      "val_sensitivity": 0.6711734693877551,
+      "val_specificity": 0.6711734693877551,
+      "best_epoch": 23
+    }
+  ],
+  "mean_auc": 0.7458673469387755,
+  "std_auc": 0.02395319867534415,
+  "mean_acc": 0.7131782945736433,
+  "std_acc": 0.032888687497048694,
+  "mean_sensitivity": 0.6477551020408162,
+  "std_sensitivity": 0.019593198560237893,
+  "mean_specificity": 0.6477551020408162,
+  "std_specificity": 0.019593198560237893
+}

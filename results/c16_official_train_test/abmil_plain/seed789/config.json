@@ -1,0 +1,44 @@
+{
+  "data": {
+    "dataset_type": "c16",
+    "modalities": [
+      "PR"
+    ],
+    "dir_mapping": {
+      "PR": "C16_PR_features"
+    },
+    "train_label_file": "/home/Public/lillan/Two_Sage_RRT-/TwoStageRRT/data/C16_labels/c16_train_labels.csv",
+    "feature_base_dir": "/home/Public/lillan/features_result/C16_features",
+    "input_dim": 768,
+    "num_classes": 2,
+    "max_patches": 2500,
+    "preload": false,
+    "sampling": "random",
+    "sample_seed": 42
+  },
+  "model": {
+    "hidden_dim": 384,
+    "dropout_rate": 0.25
+  },
+  "training": {
+    "batch_size": 1,
+    "num_epochs": 25,
+    "learning_rate": 0.0001,
+    "weight_decay": 1e-05,
+    "scheduler": {
+      "type": "cosine"
+    },
+    "focal_loss": false,
+    "focal_gamma": 2.0
+  },
+  "environment": {
+    "device": "cuda:0",
+    "num_workers": 2,
+    "seed": 789
+  },
+  "output": {
+    "save_dir": "/home/Public/lillan/Two_Sage_RRT-/TwoStageRRT/results/c16_official_train_test/abmil_plain/seed789/ckpt",
+    "log_dir": "/home/Public/lillan/Two_Sage_RRT-/TwoStageRRT/results/c16_official_train_test/abmil_plain/seed789/logs",
+    "img_dir": "/home/Public/lillan/Two_Sage_RRT-/TwoStageRRT/results/c16_official_train_test/abmil_plain/seed789/img"
+  }
+}

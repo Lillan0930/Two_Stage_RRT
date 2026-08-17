@@ -1,5 +1,5 @@
 {
-  "study_name": "pr_rrt_tune",
+  "study_name": "pr_rrt_tune_v2",
   "objective": "mean_3fold_val_auc",
   "best_value": 0.918560606060606,
   "best_params": {

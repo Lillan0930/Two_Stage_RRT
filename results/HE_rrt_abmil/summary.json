@@ -1,0 +1,71 @@
+{
+  "task": "he_rrt_abmil",
+  "modality": "HE",
+  "protocol": {
+    "train": 270,
+    "val_test": 129,
+    "monitor": "val_auc",
+    "mode": "max",
+    "patience": 10,
+    "num_epochs": 80,
+    "scheduler": "cosine",
+    "sampling": "random"
+  },
+  "seeds": [
+    42,
+    123,
+    456,
+    789,
+    1024
+  ],
+  "per_seed": [
+    {
+      "seed": 42,
+      "val_auc": 0.7910714285714286,
+      "val_acc": 0.7674418604651163,
+      "val_sensitivity": 0.6938775510204082,
+      "val_specificity": 0.6938775510204082,
+      "best_epoch": 3
+    },
+    {
+      "seed": 123,
+      "val_auc": 0.7899234693877552,
+      "val_acc": 0.7054263565891473,
+      "val_sensitivity": 0.699234693877551,
+      "val_specificity": 0.699234693877551,
+      "best_epoch": 12
+    },
+    {
+      "seed": 456,
+      "val_auc": 0.7852040816326531,
+      "val_acc": 0.7751937984496124,
+      "val_sensitivity": 0.7317602040816327,
+      "val_specificity": 0.7317602040816327,
+      "best_epoch": 4
+    },
+    {
+      "seed": 789,
+      "val_auc": 0.8118622448979591,
+      "val_acc": 0.7286821705426356,
+      "val_sensitivity": 0.7179846938775509,
+      "val_specificity": 0.7179846938775509,
+      "best_epoch": 10
+    },
+    {
+      "seed": 1024,
+      "val_auc": 0.8479591836734693,
+      "val_acc": 0.7984496124031008,
+      "val_sensitivity": 0.7426020408163265,
+      "val_specificity": 0.7426020408163265,
+      "best_epoch": 5
+    }
+  ],
+  "mean_auc": 0.8052040816326531,
+  "std_auc": 0.023261809395298302,
+  "mean_acc": 0.7550387596899225,
+  "std_acc": 0.03346826844174094,
+  "mean_sensitivity": 0.7170918367346939,
+  "std_sensitivity": 0.01857153369559842,
+  "mean_specificity": 0.7170918367346939,
+  "std_specificity": 0.01857153369559842
+}

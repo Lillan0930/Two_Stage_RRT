@@ -1,0 +1,44 @@
+{
+  "task": "her2_rrt_abmil",
+  "modality": "HER2",
+  "feature_dir": "C16_HER2_features",
+  "protocol": {
+    "train": 270,
+    "val_test": 129,
+    "early_stopping_monitor": "val_auc",
+    "patience": 10,
+    "num_epochs": 80,
+    "scheduler": "cosine",
+    "seed": 42
+  },
+  "best_auc": 0.7918367346938776,
+  "best_params": {
+    "n_heads": 8,
+    "abmil_hidden_dim": 256,
+    "drop_path": 0.1887584822650245,
+    "lr": 0.00010815996488810852,
+    "wd": 1.1202095695919546e-05,
+    "label_smoothing": 0.08623656314593801
+  },
+  "best_trial_metrics": {
+    "val_acc": 0.7131782945736435,
+    "val_auc": 0.7918367346938776,
+    "val_sensitivity": 0.6343112244897959,
+    "val_specificity": 0.6343112244897959,
+    "best_epoch": 14
+  },
+  "fixed_model_params": {
+    "region_num": 8,
+    "epeg_k": 15,
+    "crmsa_k": 5,
+    "n_layers": 2,
+    "dropout": 0.25,
+    "trans_dropout": 0.1,
+    "focal_loss": false,
+    "mlp_dim": 512,
+    "crmsa_heads": 8,
+    "crmsa_mlp": false
+  },
+  "n_completed": 9,
+  "n_pruned": 21
+}

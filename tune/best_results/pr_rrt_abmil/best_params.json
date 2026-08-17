@@ -1,0 +1,42 @@
+{
+  "task": "pr_rrt_abmil",
+  "modality": "PR",
+  "feature_dir": "C16_PR_features",
+  "protocol": {
+    "train": 270,
+    "val_test": 129,
+    "early_stopping_monitor": "val_auc",
+    "patience": 10,
+    "num_epochs": 80,
+    "scheduler": "cosine",
+    "seed": 42
+  },
+  "best_auc": 0.8362244897959182,
+  "best_params": {
+    "n_heads": 8,
+    "abmil_hidden_dim": 384,
+    "drop_path": 0.11554210024949738,
+    "lr": 0.0001224271126742359,
+    "wd": 1.6899637449765753e-06,
+    "label_smoothing": 0.03722332014732357
+  },
+  "best_trial_metrics": {
+    "val_acc": 0.7984496124031008,
+    "val_auc": 0.8362244897959182,
+    "val_sensitivity": 0.7584183673469388,
+    "val_specificity": 0.7584183673469388,
+    "best_epoch": 22
+  },
+  "fixed_model_params": {
+    "region_num": 8,
+    "epeg_k": 15,
+    "crmsa_k": 5,
+    "n_layers": 2,
+    "dropout": 0.25,
+    "trans_dropout": 0.1,
+    "focal_loss": false,
+    "mlp_dim": 512,
+    "crmsa_heads": 8,
+    "crmsa_mlp": false
+  }
+}

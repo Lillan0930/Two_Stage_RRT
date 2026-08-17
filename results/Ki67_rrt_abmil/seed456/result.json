@@ -1,0 +1,8 @@
+{
+  "seed": 456,
+  "val_auc": 0.6622448979591837,
+  "val_acc": 0.6201550387596899,
+  "val_sensitivity": 0.5,
+  "val_specificity": 0.5,
+  "best_epoch": 3
+}

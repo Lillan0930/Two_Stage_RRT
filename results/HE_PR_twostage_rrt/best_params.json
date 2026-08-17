@@ -1,0 +1,5 @@
+{
+  "crmsa_k": 3,
+  "drop_path": 0.0,
+  "stage2_lr": 2e-05
+}
