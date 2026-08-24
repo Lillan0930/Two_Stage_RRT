@@ -1,0 +1,95 @@
+{
+  "task": "he_pr_correction",
+  "description": "PR\u2192HE correction: Z_final = Z_HE + \u0394_HE, PR only conditions HE",
+  "protocol": {
+    "train": 270,
+    "val_test": 129,
+    "monitor": "val_auc",
+    "mode": "max",
+    "patience": 10,
+    "num_epochs": 80,
+    "scheduler": "cosine",
+    "sampling": "random"
+  },
+  "seeds": [
+    42,
+    123,
+    456,
+    789,
+    1024
+  ],
+  "stage1_encoder_cfg": {
+    "HE": {
+      "region_num": 4,
+      "epeg_k": 9,
+      "crmsa_k": 3,
+      "n_heads": 4,
+      "drop_path": 0.0
+    },
+    "PR": {
+      "region_num": 8,
+      "epeg_k": 15,
+      "crmsa_k": 5,
+      "n_heads": 8,
+      "drop_path": 0.11554210024949738
+    }
+  },
+  "stage2_cfg": {
+    "region_num": 4,
+    "crmsa_heads": 8,
+    "drop_out": 0.1,
+    "epeg": true,
+    "epeg_k": 9,
+    "crmsa_mlp": false,
+    "crmsa_k": 3,
+    "drop_path": 0.0
+  },
+  "lr_stage1": 1e-05,
+  "lr_stage2": 2e-05,
+  "per_seed": {
+    "42": {
+      "seed": 42,
+      "val_auc": 0.7584183673469387,
+      "val_acc": 0.7364341085271318,
+      "val_sensitivity": 0.6926020408163265,
+      "val_specificity": 0.6926020408163265,
+      "best_epoch": 8
+    },
+    "123": {
+      "seed": 123,
+      "val_auc": 0.7456632653061225,
+      "val_acc": 0.6821705426356589,
+      "val_sensitivity": 0.6409438775510204,
+      "val_specificity": 0.6409438775510204,
+      "best_epoch": 14
+    },
+    "456": {
+      "seed": 456,
+      "val_auc": 0.710969387755102,
+      "val_acc": 0.7364341085271318,
+      "val_sensitivity": 0.6688775510204081,
+      "val_specificity": 0.6688775510204081,
+      "best_epoch": 4
+    },
+    "789": {
+      "seed": 789,
+      "val_auc": 0.7271683673469387,
+      "val_acc": 0.6434108527131783,
+      "val_sensitivity": 0.6334183673469388,
+      "val_specificity": 0.6334183673469388,
+      "best_epoch": 14
+    },
+    "1024": {
+      "seed": 1024,
+      "val_auc": 0.7538265306122449,
+      "val_acc": 0.7209302325581395,
+      "val_sensitivity": 0.6998724489795918,
+      "val_specificity": 0.6998724489795918,
+      "best_epoch": 22
+    }
+  },
+  "mean_auc": 0.7392091836734693,
+  "std_auc": 0.01770187600211259,
+  "mean_acc": 0.703875968992248,
+  "std_acc": 0.036160941983536726
+}

@@ -11,21 +11,22 @@ both stainings.
         HE → RRTEncoder → Z_HE   [B, N_HE, D]
         PR → RRTEncoder → Z_PR   [B, N_PR, D]
 
-    Stage 2 (this module):
+    Stage 2 (this module) — PR→HE correction (no PR output, no concat):
         Z_HE, Z_PR
           → pad + region_partition (official)   → 16 HE regions + 16 PR regions
           → phi(·) logits → combine_weights / dispatch_weights (official)
           → routing tokens (crmsa_k per region) → concat [HE|PR] region set
           → InnerAttention over 32 regions (official, no MultiheadAttention)
-          → split back → dispatch_weights_mm / dispatch_weights → region_reverse
-          → Z_HE_out [B, N_HE, D], Z_PR_out [B, N_PR, D]
-          → LayerNorm → concat([Z_HE_out, Z_PR_out], dim=1)   [B, N_HE+N_PR, D]
+             — PR regions condition HE regions here (bidirectional MSA),
+               but PR is never dispatched back.
+          → split → dispatch HE only → Δ_HE [B, N_HE, D]
+          → LayerNorm → Z_HE + Δ_HE   [B, N_HE, D]   (HE tokens only → ABMIL)
 
-No HE anchor, no fusion gate, no alpha correction, no modality weighting,
-no cross-attention query/key/value, no new fusion loss.  The combine-attention-
-dispatch mechanism is preserved verbatim from the official CR-MSA; the residual
-is the official TransLayer residual (x = x + DropPath(z)) — no all_shortcut,
-because this Stage 2 is CR-MSA only (there is no preceding R-MSA to shortcut).
+PR enters the CR-MSA solely as conditioning context: it can steer HE's routing
+tokens, but only HE is reconstructed and passed on. ABMIL therefore sees N_HE
+tokens (no PR signal dilution), and PR can only ever shift HE, never replace it.
+The combine-attention-dispatch mechanism is preserved verbatim from the official
+CR-MSA; the residual is the official TransLayer residual (x = x + DropPath(z)).
 """
 
 import math
@@ -201,13 +202,13 @@ class CrossStainingCRMSA(nn.Module):
     # Forward
     # ------------------------------------------------------------------
     def forward(self, z_list):
-        """Cross-staining CR-MSA TransLayer.
+        """PR→HE correction (Method A): PR conditions HE's update, output HE only.
 
         Args:
             z_list: [z_he, z_pr], each [B, N, D] (Stage-1 RRTEncoder outputs)
 
         Returns:
-            [B, N_he + N_pr, D]: fused patch features (HE then PR concatenated)
+            [B, N_he, D]: corrected HE features Z_HE + Δ_HE (no PR tokens)
         """
         z_he, z_pr = z_list
 
@@ -215,9 +216,10 @@ class CrossStainingCRMSA(nn.Module):
         z_he_n = self.norm(z_he)
         z_pr_n = self.norm(z_pr)
 
-        # Combine: pad + partition + routing tokens for each staining
+        # Combine: pad + partition + routing tokens. PR routing tokens are used
+        # only as conditioning context — never dispatched back.
         routing_he, dmm_he, dw_he, rs_he, H_he, W_he, add_he = self._combine(z_he_n)
-        routing_pr, dmm_pr, dw_pr, rs_pr, H_pr, W_pr, add_pr = self._combine(z_pr_n)
+        routing_pr = self._combine(z_pr_n)[0]
 
         # Unified region set: concat routing tokens along the region axis.
         # Shape stays [crmsa_k, nW*B, C] — the second dim is the set of regions
@@ -225,31 +227,22 @@ class CrossStainingCRMSA(nn.Module):
         routing = torch.cat([routing_he, routing_pr], dim=1)          # crmsa_k, 2·nW·B, C
 
         # Cross-staining region attention (official InnerAttention):
-        # each of the crmsa_k routing channels attends over all HE+PR regions.
+        # each of the crmsa_k routing channels attends over all HE+PR regions,
+        # so PR regions can steer HE's routing tokens.
         routing = self.attn(routing)
 
-        # Split back into HE / PR routing tokens (concat order preserved)
+        # Dispatch HE only — PR is never reconstructed back to patches.
         n_he = routing_he.shape[1]
         routing_he = routing[:, :n_he]
-        routing_pr = routing[:, n_he:]
 
-        # Dispatch reconstruction (official, no broadcast). This is the residual
-        # branch output z in the official `x = x + DropPath(z)` — the attention
-        # (combine→attention→dispatch) produces the update, the original x is
-        # added back below.
+        # Residual (official TransLayer): x = x + DropPath(z). This is the
+        # correction Δ_HE; the original HE is added back below.
         delta_he = self._dispatch(routing_he, dmm_he, dw_he, rs_he, H_he, W_he, add_he)
-        delta_pr = self._dispatch(routing_pr, dmm_pr, dw_pr, rs_pr, H_pr, W_pr, add_pr)
-
-        # Residual (official TransLayer): x = x + DropPath(z)
         z_he = z_he + self.drop_path(delta_he)
-        z_pr = z_pr + self.drop_path(delta_pr)
 
         # Optional FFN
         if self.ffn:
             z_he = z_he + self.drop_path(self.mlp(self.norm2(z_he)))
-            z_pr = z_pr + self.drop_path(self.mlp(self.norm2(z_pr)))
 
-        # Final LayerNorm, then concatenate for ABMIL
-        z_he = self.out_norm(z_he)
-        z_pr = self.out_norm(z_pr)
-        return torch.cat([z_he, z_pr], dim=1)
+        # Final LayerNorm, return HE only (ABMIL sees N_HE tokens, not 2N)
+        return self.out_norm(z_he)

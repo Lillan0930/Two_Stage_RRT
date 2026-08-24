@@ -528,10 +528,9 @@ class MM_RRT_ABMIL(nn.Module):
             if len(z_he.shape) == 2: z_he = z_he.unsqueeze(0)
             if len(z_ihc.shape) == 2: z_ihc = z_ihc.unsqueeze(0)
 
-            # Stage 2: cross-staining fusion
+            # Stage 2: PR→HE correction (official-style cross-staining CR-MSA).
+            # PR conditions HE's update; output is HE-only [B, N_he, D].
             if self.stage2_type == 'staining_msa':
-                # official-style cross-staining CR-MSA, output concatenated
-                # along patch dim [B, N_he+N_ihc, D]
                 z_final = self.cross_region_mod([z_he, z_ihc])
                 fusion_stats = {'two_stage_region': True, 'stage2': 'staining_msa'}
             elif self.stage2_type == 'concat':
