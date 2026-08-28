@@ -1,0 +1,17 @@
+{
+  "initialization": "random_from_scratch",
+  "pretrained_he_ckpt": null,
+  "pretrained_pr_ckpt": null,
+  "all_active_modules_trainable": true,
+  "actual_optimizer_lrs": {
+    "he_projection": 0.0001,
+    "pr_projection": 0.0001,
+    "he_rrt": 0.0001,
+    "pr_rrt": 0.0001,
+    "stage2": 0.0001,
+    "abmil": 0.0001
+  },
+  "train_persistent_workers": false,
+  "use_correction_only": false,
+  "use_logit_attn": false
+}

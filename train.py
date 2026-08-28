@@ -413,6 +413,32 @@ class Trainer:
             self._train_dataset = train_dataset  # for set_epoch() call
             collate_fn = c16_multimodal_collate_fn
 
+            # ── per-epoch random sampling 与 persistent worker 冲突修复 ──
+            # 当 train per_epoch=True 时，worker 持有独立 Dataset 副本并跨 epoch
+            # 保留，主进程 set_epoch() 不会更新 worker 内 _epoch。因此 train
+            # per_epoch=True 必须关闭 persistent_workers；val/test per_epoch=False
+            # 则保持 persistent_workers=True 不受影响。
+            train_per_epoch = bool(getattr(train_dataset, "per_epoch", False))
+            train_persistent_workers = (
+                env_cfg["num_workers"] > 0
+                and not train_per_epoch
+            )
+            self._train_persistent_workers = train_persistent_workers
+
+            if train_per_epoch:
+                assert not train_persistent_workers, (
+                    "per_epoch sampling requires persistent_workers=False, "
+                    "otherwise worker dataset epoch state will remain stale"
+                )
+
+            self.logger.info(
+                "C16 Train sampler: "
+                f"sampling={train_sampling}, "
+                f"per_epoch={train_dataset.per_epoch}, "
+                f"num_workers={env_cfg['num_workers']}, "
+                f"persistent_workers={train_persistent_workers}"
+            )
+
             train_loader = DataLoader(
                 train_dataset,
                 batch_size=train_cfg['batch_size'],
@@ -420,7 +446,7 @@ class Trainer:
                 collate_fn=collate_fn,
                 num_workers=env_cfg['num_workers'],
                 pin_memory=True,
-                persistent_workers=(env_cfg['num_workers'] > 0)
+                persistent_workers=train_persistent_workers,
             )
 
             val_loader = None

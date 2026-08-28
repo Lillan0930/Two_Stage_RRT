@@ -213,6 +213,23 @@ class C16MultimodalDataset:
             else:
                 feat = self._load_feature(mod, slide_id)
 
+            # 辅助模态一致性检查（应用 patch_indices 之前）：patch 数量必须与
+            # 第一模态一致，特征维度必须相同。共享 patch_indices 要求 HE/PR 的
+            # patch 数量与顺序完全相同。
+            if i > 0:
+                if feat.shape[0] != total_patches:
+                    raise ValueError(
+                        f"{slide_id}: patch count mismatch between modalities: "
+                        f"{first_mod}={total_patches}, {mod}={feat.shape[0]}. "
+                        "Shared patch indices require identical patch counts and ordering."
+                    )
+                if feat.shape[-1] != feat_first.shape[-1]:
+                    raise ValueError(
+                        f"{slide_id}: feature dimension mismatch: "
+                        f"{first_mod}={feat_first.shape[-1]}, "
+                        f"{mod}={feat.shape[-1]}"
+                    )
+
             if patch_indices is not None:
                 feat = feat[patch_indices]
             features[mod] = feat

@@ -1,0 +1,238 @@
+{
+  "task": "twostage_training_protocol_control",
+  "conditions": {
+    "he_rrt_samplerfix_lr1e4": {
+      "desc": "HE-only baseline (sampler fix, unified lr 1e-4)",
+      "per_seed": {
+        "42": 0.8507653061224489,
+        "123": 0.8936224489795918,
+        "456": 0.8038265306122448
+      },
+      "best_epoch": {
+        "42": 5,
+        "123": 33,
+        "456": 4
+      },
+      "actual_optimizer_lrs": {
+        "he_projection": 0.0001,
+        "he_rrt": 0.0001,
+        "abmil": 0.0001
+      },
+      "mean_auc": 0.8494047619047618,
+      "std_auc": 0.036671651624336186
+    },
+    "twostage_r4_noepeg_samplerfix_diff_lr": {
+      "desc": "two-stage r4 no-EPEG (sampler fix, diff lr 1e-5/2e-5)",
+      "per_seed": {
+        "42": 0.7295918367346939,
+        "123": 0.6979591836734693,
+        "456": 0.7200255102040816
+      },
+      "best_epoch": {
+        "42": 12,
+        "123": 0,
+        "456": 17
+      },
+      "actual_optimizer_lrs": {
+        "he_projection": 1e-05,
+        "pr_projection": 1e-05,
+        "he_rrt": 1e-05,
+        "pr_rrt": 1e-05,
+        "stage2": 2e-05,
+        "abmil": 2e-05
+      },
+      "mean_auc": 0.7158588435374149,
+      "std_auc": 0.013245804826592777
+    },
+    "twostage_r4_noepeg_samplerfix_unified_lr1e4": {
+      "desc": "two-stage r4 no-EPEG (sampler fix, unified lr 1e-4)",
+      "per_seed": {
+        "42": 0.8775510204081634,
+        "123": 0.8528061224489796,
+        "456": 0.821173469387755
+      },
+      "best_epoch": {
+        "42": 14,
+        "123": 23,
+        "456": 15
+      },
+      "actual_optimizer_lrs": {
+        "he_projection": 0.0001,
+        "pr_projection": 0.0001,
+        "he_rrt": 0.0001,
+        "pr_rrt": 0.0001,
+        "stage2": 0.0001,
+        "abmil": 0.0001
+      },
+      "mean_auc": 0.8505102040816327,
+      "std_auc": 0.02307322395659561
+    }
+  },
+  "paired_delta_auc": {
+    "diff_lr_minus_he": {
+      "common_seeds": [
+        42,
+        123,
+        456
+      ],
+      "per_seed_delta": {
+        "42": -0.121173,
+        "123": -0.195663,
+        "456": -0.083801
+      },
+      "mean_delta": -0.13354591836734694,
+      "std_delta": 0.04649801844320681
+    },
+    "unified_lr_minus_he": {
+      "common_seeds": [
+        42,
+        123,
+        456
+      ],
+      "per_seed_delta": {
+        "42": 0.026786,
+        "123": -0.040816,
+        "456": 0.017347
+      },
+      "mean_delta": 0.0011054421768708078,
+      "std_delta": 0.029892570308308858
+    },
+    "unified_lr_minus_diff_lr": {
+      "common_seeds": [
+        42,
+        123,
+        456
+      ],
+      "per_seed_delta": {
+        "42": 0.147959,
+        "123": 0.154847,
+        "456": 0.101148
+      },
+      "mean_delta": 0.13465136054421775,
+      "std_delta": 0.023856777089270486
+    }
+  },
+  "protocol": {
+    "train": 270,
+    "val_test": 129,
+    "monitor": "val_auc",
+    "mode": "max",
+    "patience": 10,
+    "num_epochs": 80,
+    "scheduler": "cosine",
+    "sampling": "random",
+    "train_per_epoch": true,
+    "val_test_per_epoch": false,
+    "batch_size": 1,
+    "num_workers": 2,
+    "max_patches": 2500,
+    "weight_decay": 1e-05,
+    "dropout": 0.25,
+    "abmil_hidden_dim": 256,
+    "label_smoothing": 0.0,
+    "aux_loss_weight": 0.0,
+    "modality_dropout": 0.0,
+    "kd_enabled": false
+  },
+  "stage1_encoder_cfg": {
+    "HE": {
+      "region_num": 4,
+      "epeg_k": 9,
+      "crmsa_k": 3,
+      "n_heads": 4,
+      "drop_path": 0.0
+    },
+    "PR": {
+      "region_num": 8,
+      "epeg_k": 15,
+      "crmsa_k": 5,
+      "n_heads": 8,
+      "drop_path": 0.11554210024949738
+    }
+  },
+  "stage2_cfg": {
+    "region_num": 4,
+    "crmsa_heads": 8,
+    "crmsa_k": 3,
+    "drop_out": 0.1,
+    "drop_path": 0.0,
+    "epeg": false,
+    "epeg_k": 15,
+    "crmsa_mlp": false,
+    "ffn": false,
+    "qkv_bias": true
+  },
+  "pretrained_loaded": false,
+  "initialization": "random_from_scratch",
+  "verify": {
+    "passed": true,
+    "checks": {
+      "check1_init": {
+        "random_from_scratch": true,
+        "pretrained_he_ckpt": null,
+        "use_correction_only": false,
+        "use_logit_attn": false
+      },
+      "check2_optimizer_lrs": {
+        "param_groups": [
+          {
+            "name": "all_params",
+            "lr": 0.0001,
+            "weight_decay": 1e-05,
+            "parameter_count": 10790654
+          }
+        ],
+        "module_lrs": {
+          "he_projection": 0.0001,
+          "pr_projection": 0.0001,
+          "he_rrt": 0.0001,
+          "pr_rrt": 0.0001,
+          "stage2": 0.0001,
+          "abmil": 0.0001
+        }
+      },
+      "check3_grad_norms": {
+        "grad_norm": {
+          "he_projection": 3.162626,
+          "pr_projection": 4.554284,
+          "he_rrt": 4.582856,
+          "pr_rrt": 5.2498,
+          "stage2": 2.565485,
+          "abmil": 3.741285
+        },
+        "unused_grad_none_count": 38
+      },
+      "check4_relative_updates": {
+        "he_projection": 0.00252399,
+        "pr_projection": 0.00252686,
+        "he_rrt": 0.00320263,
+        "pr_rrt": 0.00293463,
+        "stage2": 0.00320096,
+        "abmil": 0.00196671
+      },
+      "check5_per_epoch_sampler": {
+        "slide": "normal_001",
+        "total_patches": 6320,
+        "epoch0_indices_md5": "172a85acdfec18b4cf097612544f5f99",
+        "epoch1_indices_md5": "3eacc4f34b9fb9b06d0fd9c6fa46ff39",
+        "epoch0_repeat_indices_md5": "172a85acdfec18b4cf097612544f5f99",
+        "train_persistent_workers": false,
+        "he_pr_patch_count": [
+          2500,
+          2500
+        ]
+      },
+      "check6_val_fixed_random": {
+        "slide": "test_001",
+        "total_patches": 24528,
+        "stable": true
+      },
+      "check7_patch_consistency": {
+        "checked_train_slides": 270,
+        "checked_test_slides": 129,
+        "patch_count_mismatch": 0,
+        "feature_dim_mismatch": 0
+      }
+    }
+  }
+}

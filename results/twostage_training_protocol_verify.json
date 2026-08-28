@@ -1,0 +1,71 @@
+{
+  "passed": true,
+  "checks": {
+    "check1_init": {
+      "random_from_scratch": true,
+      "pretrained_he_ckpt": null,
+      "use_correction_only": false,
+      "use_logit_attn": false
+    },
+    "check2_optimizer_lrs": {
+      "param_groups": [
+        {
+          "name": "all_params",
+          "lr": 0.0001,
+          "weight_decay": 1e-05,
+          "parameter_count": 10790654
+        }
+      ],
+      "module_lrs": {
+        "he_projection": 0.0001,
+        "pr_projection": 0.0001,
+        "he_rrt": 0.0001,
+        "pr_rrt": 0.0001,
+        "stage2": 0.0001,
+        "abmil": 0.0001
+      }
+    },
+    "check3_grad_norms": {
+      "grad_norm": {
+        "he_projection": 3.162626,
+        "pr_projection": 4.554284,
+        "he_rrt": 4.582856,
+        "pr_rrt": 5.2498,
+        "stage2": 2.565485,
+        "abmil": 3.741285
+      },
+      "unused_grad_none_count": 38
+    },
+    "check4_relative_updates": {
+      "he_projection": 0.00252399,
+      "pr_projection": 0.00252686,
+      "he_rrt": 0.00320263,
+      "pr_rrt": 0.00293463,
+      "stage2": 0.00320096,
+      "abmil": 0.00196671
+    },
+    "check5_per_epoch_sampler": {
+      "slide": "normal_001",
+      "total_patches": 6320,
+      "epoch0_indices_md5": "172a85acdfec18b4cf097612544f5f99",
+      "epoch1_indices_md5": "3eacc4f34b9fb9b06d0fd9c6fa46ff39",
+      "epoch0_repeat_indices_md5": "172a85acdfec18b4cf097612544f5f99",
+      "train_persistent_workers": false,
+      "he_pr_patch_count": [
+        2500,
+        2500
+      ]
+    },
+    "check6_val_fixed_random": {
+      "slide": "test_001",
+      "total_patches": 24528,
+      "stable": true
+    },
+    "check7_patch_consistency": {
+      "checked_train_slides": 270,
+      "checked_test_slides": 129,
+      "patch_count_mismatch": 0,
+      "feature_dim_mismatch": 0
+    }
+  }
+}

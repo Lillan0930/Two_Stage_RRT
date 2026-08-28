@@ -1,0 +1,19 @@
+{
+  "seed": 456,
+  "auc": 0.8038265306122448,
+  "accuracy": 0.7596899224806202,
+  "f1": 0.698802440310311,
+  "sensitivity_tumor": 0.40816326530612246,
+  "specificity_tumor": 0.975,
+  "sensitivity_macro": 0.6915816326530613,
+  "specificity_macro": 0.6915816326530613,
+  "best_epoch": 4,
+  "checkpoint": "/home/Public/lillan/Two_Sage_RRT-/TwoStageRRT/results/he_rrt_samplerfix_lr1e4/seed456/ckpt/best_model.pt",
+  "actual_optimizer_lrs": {
+    "he_projection": 0.0001,
+    "he_rrt": 0.0001,
+    "abmil": 0.0001
+  },
+  "train_persistent_workers": false,
+  "initialization": "random_from_scratch"
+}
