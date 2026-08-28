@@ -1,0 +1,10 @@
+{
+  "seed": 42,
+  "val_auc": 0.6709183673469389,
+  "val_acc": 0.6124031007751938,
+  "val_f1": 0.5996772591857,
+  "val_sensitivity": 0.6044642857142857,
+  "val_specificity": 0.6044642857142857,
+  "best_epoch": 7,
+  "checkpoint": "/home/Public/lillan/Two_Sage_RRT-/TwoStageRRT/results/symmetric_r4_noepeg/seed42/ckpt/best_model.pt"
+}

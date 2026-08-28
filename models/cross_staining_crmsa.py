@@ -5,28 +5,29 @@ Stage 2 of Two-stage R²T.  Faithfully mirrors the official RRT-MIL
 `CrossRegionAttention` (models/rmsa.py), the *only* change being how the input
 regions are organized: HE and PR regions are treated as one unified region set,
 so the combine → cross-region attention → dispatch pipeline runs jointly over
-both stainings.
+both stainings, then each modality is dispatched back to its own patches and
+concatenated.
 
     Stage 1 (unchanged):
         HE → RRTEncoder → Z_HE   [B, N_HE, D]
         PR → RRTEncoder → Z_PR   [B, N_PR, D]
 
-    Stage 2 (this module) — PR→HE correction (no PR output, no concat):
+    Stage 2 (this module) — symmetric dual-modality CR-MSA:
         Z_HE, Z_PR
-          → pad + region_partition (official)   → 16 HE regions + 16 PR regions
+          → pad + region_partition (official)   → regions per staining
           → phi(·) logits → combine_weights / dispatch_weights (official)
           → routing tokens (crmsa_k per region) → concat [HE|PR] region set
-          → InnerAttention over 32 regions (official, no MultiheadAttention)
-             — PR regions condition HE regions here (bidirectional MSA),
-               but PR is never dispatched back.
-          → split → dispatch HE only → Δ_HE [B, N_HE, D]
-          → LayerNorm → Z_HE + Δ_HE   [B, N_HE, D]   (HE tokens only → ABMIL)
+          → InnerAttention over the joint region set (official, no
+            MultiheadAttention)
+          → split → dispatch HE and PR separately
+          → Δ_HE [B, N_HE, D], Δ_PR [B, N_PR, D]
+          → joint residual:  concat([HE,PR]) + DropPath(concat([Δ_HE, Δ_PR]))
+          → joint FFN (optional) → trailing LayerNorm
+          → Z_final = [HE_out | PR_out]  [B, N_HE + N_PR, D]  → ABMIL
 
-PR enters the CR-MSA solely as conditioning context: it can steer HE's routing
-tokens, but only HE is reconstructed and passed on. ABMIL therefore sees N_HE
-tokens (no PR signal dilution), and PR can only ever shift HE, never replace it.
-The combine-attention-dispatch mechanism is preserved verbatim from the official
-CR-MSA; the residual is the official TransLayer residual (x = x + DropPath(z)).
+Both stainings interact at the routing-region level and both are reconstructed;
+ABMIL sees N_HE + N_PR tokens.  EPEG is OFF by default (matches the official
+CR-MSA default `epeg=False`).
 """
 
 import math
@@ -45,18 +46,20 @@ class CrossStainingCRMSA(nn.Module):
         dim:          feature dimension (512)
         num_heads:    attention heads for the routing-token MSA (crmsa_heads)
         region_num:   number of regions per side; K = region_num² per staining
+                      (default 8)
         crmsa_k:      routing tokens per region (official `crmsa_k`)
         drop_out:     attention / projection dropout
         drop_path:    stochastic depth on the residual
-        epeg:         whether InnerAttention uses EPEG (official)
-        epeg_k:       EPEG kernel size
+        epeg:         whether InnerAttention uses EPEG (default False, matches
+                      the official CR-MSA default)
+        epeg_k:       EPEG kernel size (default 15)
         crmsa_mlp:    whether phi is a learned MLP (else a [dim, crmsa_k] param)
         ffn:          whether to append the official FFN (default False, matches
                       current RRT config)
     """
 
-    def __init__(self, dim=512, num_heads=8, region_num=4, crmsa_k=3,
-                 drop_out=0.1, drop_path=0.0, epeg=True, epeg_k=9,
+    def __init__(self, dim=512, num_heads=8, region_num=8, crmsa_k=3,
+                 drop_out=0.1, drop_path=0.0, epeg=False, epeg_k=15,
                  crmsa_mlp=False, ffn=False, ffn_act='gelu', mlp_ratio=4.,
                  region_size=0, min_region_num=0, min_region_ratio=0,
                  qkv_bias=True, **kwargs):
@@ -202,47 +205,62 @@ class CrossStainingCRMSA(nn.Module):
     # Forward
     # ------------------------------------------------------------------
     def forward(self, z_list):
-        """PR→HE correction (Method A): PR conditions HE's update, output HE only.
+        """Symmetric cross-staining CR-MSA (official-style, dual modality).
+
+        Both HE and PR regions are treated as one unified region set for the
+        combine → InnerAttention → dispatch pipeline; each modality is then
+        dispatched back to its own patches and concatenated.
 
         Args:
             z_list: [z_he, z_pr], each [B, N, D] (Stage-1 RRTEncoder outputs)
 
         Returns:
-            [B, N_he, D]: corrected HE features Z_HE + Δ_HE (no PR tokens)
+            [B, N_HE + N_PR, D]: fused features (HE tokens first, then PR)
         """
         z_he, z_pr = z_list
+
+        # Batch safety check: the official CR-MSA routing/dimension logic assumes
+        # a single slide per forward pass (batch_size == 1).
+        if z_he.shape[0] != 1 or z_pr.shape[0] != 1:
+            raise NotImplementedError(
+                f"CrossStainingCRMSA requires batch_size == 1, got "
+                f"B_he={z_he.shape[0]}, B_pr={z_pr.shape[0]}")
 
         # Pre-norm (official TransLayer)
         z_he_n = self.norm(z_he)
         z_pr_n = self.norm(z_pr)
 
-        # Combine: pad + partition + routing tokens. PR routing tokens are used
-        # only as conditioning context — never dispatched back.
+        # Combine: pad + partition + routing tokens (shared phi, per modality)
         routing_he, dmm_he, dw_he, rs_he, H_he, W_he, add_he = self._combine(z_he_n)
-        routing_pr = self._combine(z_pr_n)[0]
+        routing_pr, dmm_pr, dw_pr, rs_pr, H_pr, W_pr, add_pr = self._combine(z_pr_n)
 
         # Unified region set: concat routing tokens along the region axis.
         # Shape stays [crmsa_k, nW*B, C] — the second dim is the set of regions
-        # (HE regions then PR regions), NOT [crmsa_k * 2·nW*B] flattened.
-        routing = torch.cat([routing_he, routing_pr], dim=1)          # crmsa_k, 2·nW·B, C
+        # (HE regions then PR regions), NOT [crmsa_k * 2·nW·B] flattened.
+        routing_joint = torch.cat([routing_he, routing_pr], dim=1)   # crmsa_k, nW_he·B + nW_pr·B, C
 
-        # Cross-staining region attention (official InnerAttention):
-        # each of the crmsa_k routing channels attends over all HE+PR regions,
-        # so PR regions can steer HE's routing tokens.
-        routing = self.attn(routing)
+        # Cross-staining region attention (official InnerAttention): each of the
+        # crmsa_k routing channels attends over all HE+PR regions jointly.
+        routing_joint = self.attn(routing_joint)
 
-        # Dispatch HE only — PR is never reconstructed back to patches.
-        n_he = routing_he.shape[1]
-        routing_he = routing[:, :n_he]
+        # Split back into per-modality fused routing tokens, then dispatch each
+        # side to its own patches.
+        n_he_regions = routing_he.shape[1]
+        routing_he_fused = routing_joint[:, :n_he_regions]
+        routing_pr_fused = routing_joint[:, n_he_regions:]
 
-        # Residual (official TransLayer): x = x + DropPath(z). This is the
-        # correction Δ_HE; the original HE is added back below.
-        delta_he = self._dispatch(routing_he, dmm_he, dw_he, rs_he, H_he, W_he, add_he)
-        z_he = z_he + self.drop_path(delta_he)
+        delta_he = self._dispatch(routing_he_fused, dmm_he, dw_he, rs_he, H_he, W_he, add_he)
+        delta_pr = self._dispatch(routing_pr_fused, dmm_pr, dw_pr, rs_pr, H_pr, W_pr, add_pr)
 
-        # Optional FFN
+        # Joint residual (official TransLayer): single DropPath over both deltas.
+        z_joint = torch.cat([z_he, z_pr], dim=1)
+        delta_joint = torch.cat([delta_he, delta_pr], dim=1)
+        z_joint = z_joint + self.drop_path(delta_joint)
+
+        # Optional FFN (joint, single call)
         if self.ffn:
-            z_he = z_he + self.drop_path(self.mlp(self.norm2(z_he)))
+            z_joint = z_joint + self.drop_path(self.mlp(self.norm2(z_joint)))
 
-        # Final LayerNorm, return HE only (ABMIL sees N_HE tokens, not 2N)
-        return self.out_norm(z_he)
+        # Final LayerNorm, return concat [B, N_HE + N_PR, D]
+        z_joint = self.out_norm(z_joint)
+        return z_joint

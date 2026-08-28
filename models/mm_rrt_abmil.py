@@ -244,15 +244,16 @@ class MM_RRT_ABMIL(nn.Module):
                 from models.cross_staining_crmsa import CrossStainingCRMSA
                 self.cross_region_mod = CrossStainingCRMSA(
                     dim=mlp_dim,
-                    num_heads=_get(stage2_cfg, 'crmsa_heads', crmsa_heads),
-                    region_num=_get(stage2_cfg, 'region_num', region_num),
-                    crmsa_k=_get(stage2_cfg, 'crmsa_k', crmsa_k),
-                    drop_out=_get(stage2_cfg, 'drop_out',
-                                  trans_dropout if isinstance(trans_dropout, (int, float)) else 0.1),
-                    drop_path=_get(stage2_cfg, 'drop_path', drop_path),
-                    epeg=_get(stage2_cfg, 'epeg', epeg),
-                    epeg_k=_get(stage2_cfg, 'epeg_k', epeg_k),
-                    crmsa_mlp=_get(stage2_cfg, 'crmsa_mlp', crmsa_mlp),
+                    num_heads=_get(stage2_cfg, 'crmsa_heads', 8),
+                    region_num=_get(stage2_cfg, 'region_num', 8),
+                    crmsa_k=_get(stage2_cfg, 'crmsa_k', 3),
+                    drop_out=_get(stage2_cfg, 'drop_out', 0.1),
+                    drop_path=_get(stage2_cfg, 'drop_path', 0.0),
+                    epeg=_get(stage2_cfg, 'epeg', False),
+                    epeg_k=_get(stage2_cfg, 'epeg_k', 15),
+                    crmsa_mlp=_get(stage2_cfg, 'crmsa_mlp', False),
+                    ffn=_get(stage2_cfg, 'ffn', False),
+                    qkv_bias=_get(stage2_cfg, 'qkv_bias', True),
                 )
             elif self.stage2_type == 'concat':
                 # Ablation: no cross-staining fusion — plain concat of Stage-1 outputs.
@@ -528,8 +529,9 @@ class MM_RRT_ABMIL(nn.Module):
             if len(z_he.shape) == 2: z_he = z_he.unsqueeze(0)
             if len(z_ihc.shape) == 2: z_ihc = z_ihc.unsqueeze(0)
 
-            # Stage 2: PR→HE correction (official-style cross-staining CR-MSA).
-            # PR conditions HE's update; output is HE-only [B, N_he, D].
+            # Stage 2: symmetric cross-staining official-style CR-MSA.
+            # HE and PR jointly interact at routing-region level; both modalities
+            # are dispatched back and concatenated. Output: [B, N_HE + N_PR, D].
             if self.stage2_type == 'staining_msa':
                 z_final = self.cross_region_mod([z_he, z_ihc])
                 fusion_stats = {'two_stage_region': True, 'stage2': 'staining_msa'}

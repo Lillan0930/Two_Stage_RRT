@@ -1,0 +1,112 @@
+{
+  "data": {
+    "dataset_type": "c16",
+    "modalities": [
+      "HE",
+      "PR"
+    ],
+    "dir_mapping": {
+      "HE": "C16_HE_features",
+      "PR": "C16_PR_features"
+    },
+    "train_label_file": "/home/Public/lillan/Two_Sage_RRT-/TwoStageRRT/data/C16_labels/c16_train_labels.csv",
+    "val_label_file": "/home/Public/lillan/Two_Sage_RRT-/TwoStageRRT/data/C16_labels/c16_test_labels.csv",
+    "feature_base_dir": "/home/Public/lillan/features_result/C16_features",
+    "input_dim": 768,
+    "num_classes": 2,
+    "max_patches": 2500,
+    "preload": false,
+    "sampling": "random",
+    "sample_seed": 789,
+    "no_validation": false
+  },
+  "model": {
+    "mil_type": "abmil",
+    "mlp_dim": 512,
+    "dropout": 0.25,
+    "use_gated": false,
+    "region_num": 4,
+    "n_layers": 2,
+    "n_heads": 4,
+    "drop_path": 0.0,
+    "trans_dropout": 0.1,
+    "epeg": true,
+    "epeg_k": 9,
+    "crmsa_k": 3,
+    "cr_msa": true,
+    "all_shortcut": true,
+    "crmsa_heads": 8,
+    "crmsa_mlp": false,
+    "fusion_type": "two_stage_region",
+    "fusion_stage": "middle",
+    "stage2_type": "staining_msa",
+    "use_gated_fusion": false,
+    "abmil_hidden_dim": 256,
+    "use_mclc": false,
+    "aggregate_modalities": true,
+    "encoder_cfg": {
+      "HE": {
+        "region_num": 4,
+        "epeg_k": 9,
+        "crmsa_k": 3,
+        "n_heads": 4,
+        "drop_path": 0.0
+      },
+      "PR": {
+        "region_num": 8,
+        "epeg_k": 15,
+        "crmsa_k": 5,
+        "n_heads": 8,
+        "drop_path": 0.11554210024949738
+      }
+    },
+    "stage2_cfg": {
+      "region_num": 8,
+      "crmsa_heads": 8,
+      "crmsa_k": 3,
+      "drop_out": 0.1,
+      "drop_path": 0.0,
+      "epeg": false,
+      "epeg_k": 15,
+      "crmsa_mlp": false,
+      "ffn": false,
+      "qkv_bias": true
+    }
+  },
+  "training": {
+    "batch_size": 1,
+    "num_epochs": 80,
+    "learning_rate": 0.0001,
+    "lr_stage1": 1e-05,
+    "lr_stage2": 2e-05,
+    "weight_decay": 1e-05,
+    "scheduler": {
+      "type": "cosine"
+    },
+    "use_amp": false,
+    "focal_loss": false,
+    "label_smoothing": 0.0,
+    "kd_enabled": false,
+    "modality_dropout": 0.0,
+    "aux_loss_weight": 0.0,
+    "early_stopping": {
+      "monitor": "val_auc",
+      "mode": "max",
+      "patience": 10
+    },
+    "no_validation": false
+  },
+  "data_split": {
+    "val_start": 100
+  },
+  "environment": {
+    "device": "cuda:0",
+    "num_workers": 2,
+    "seed": 789
+  },
+  "output": {
+    "save_dir": "/home/Public/lillan/Two_Sage_RRT-/TwoStageRRT/results/symmetric_r8_noepeg/seed789/ckpt",
+    "log_dir": "/home/Public/lillan/Two_Sage_RRT-/TwoStageRRT/results/symmetric_r8_noepeg/seed789/logs",
+    "img_dir": "/home/Public/lillan/Two_Sage_RRT-/TwoStageRRT/results/symmetric_r8_noepeg/seed789/img"
+  }
+}
