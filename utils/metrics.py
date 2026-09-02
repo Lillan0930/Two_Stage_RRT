@@ -61,6 +61,14 @@ def calculate_metrics(y_true, y_pred, y_prob=None, num_classes=4):
         metrics.get(f'specificity_class_{i}', 0) for i in range(num_classes)
     ])
 
+    # Binary: expose tumor (class 1) as the positive class.  For binary the
+    # *_macro values are both equal to balanced accuracy (sensitivity_macro ==
+    # specificity_macro identically), so a clinically meaningful sensitivity /
+    # specificity must be reported with tumor=1 as positive.
+    if num_classes == 2:
+        metrics['sensitivity'] = metrics.get('sensitivity_class_1', 0.0)
+        metrics['specificity'] = metrics.get('specificity_class_1', 0.0)
+
     # AUC
     if y_prob is not None:
         y_prob = np.array(y_prob)

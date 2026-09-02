@@ -38,19 +38,26 @@ from models.he_conditioned_cross_attn import HEConditionedCrossAttention, broadc
 
 
 def initialize_weights(module):
-    """Initialize weights for the module"""
-    for m in module.modules():
-        if isinstance(m, nn.Conv2d):
-            nn.init.xavier_normal_(m.weight)
-            if m.bias is not None:
-                m.bias.data.zero_()
-        elif isinstance(m, nn.Linear):
-            nn.init.xavier_normal_(m.weight)
-            if m.bias is not None:
-                m.bias.data.zero_()
-        elif isinstance(m, nn.LayerNorm):
-            nn.init.constant_(m.bias, 0)
-            nn.init.constant_(m.weight, 1.0)
+    """Initialize weights for a single module.
+
+    NOTE: this operates on the *single* module passed in (not its descendants).
+    It is always invoked via ``module.apply(initialize_weights)``, which already
+    recurses over every submodule, so iterating ``module.modules()`` here would
+    re-initialize each Linear/LayerNorm/Conv2d multiple times (the deeper a module
+    sits, the more times its weights are overwritten).  Single-module init makes
+    each parameter initialized exactly once.
+    """
+    if isinstance(module, nn.Conv2d):
+        nn.init.xavier_normal_(module.weight)
+        if module.bias is not None:
+            module.bias.data.zero_()
+    elif isinstance(module, nn.Linear):
+        nn.init.xavier_normal_(module.weight)
+        if module.bias is not None:
+            module.bias.data.zero_()
+    elif isinstance(module, nn.LayerNorm):
+        nn.init.constant_(module.bias, 0)
+        nn.init.constant_(module.weight, 1.0)
 
 
 # ---------------------------------------------------------------------------

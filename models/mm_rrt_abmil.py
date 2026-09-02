@@ -153,35 +153,43 @@ class MM_RRT_ABMIL(nn.Module):
         self.dp = nn.Dropout(dropout) if dropout > 0. else nn.Identity()
         
         # MM-RRT Encoder
+        # The two-stage region R²T paths (fusion_type='two_stage_region' /
+        # 'two_stage_direct') use the dedicated official RRTEncoders
+        # (self.rrt_he / self.rrt_ihc) instead of the generic MM_RRTEncoder.
+        # Creating MM_RRTEncoder there only wastes ~4.5M params (never used in
+        # forward → grad=None) and burns RNG state during init.  It is therefore
+        # only built for the fusion types that actually call it.
         encoder_extra = {}
         for k in ['aggregate_modalities', 'use_cross_patch_anchor']:
             if k in kwargs:
                 encoder_extra[k] = kwargs.pop(k)
-        self.rrt_encoder = MM_RRTEncoder(
-            mlp_dim=mlp_dim,
-            num_modalities=num_modalities,
-            fusion_type=fusion_type,
-            fusion_stage=fusion_stage,
-            fusion_kwargs=fusion_kwargs,
-            use_gated_fusion=use_gated_fusion,
-            use_per_layer_fusion=use_per_layer_fusion,
-            region_num=region_num,
-            n_layers=n_layers,
-            n_heads=n_heads,
-            drop_path=drop_path,
-            drop_out=trans_dropout,
-            epeg=epeg,
-            epeg_k=epeg_k,
-            crmsa_k=crmsa_k,
-            cr_msa=cr_msa,
-            all_shortcut=all_shortcut,
-            crmsa_mlp=crmsa_mlp,
-            crmsa_heads=crmsa_heads,
-            aggregate_modalities=encoder_extra.get('aggregate_modalities', True),
-            use_cross_patch_anchor=encoder_extra.get('use_cross_patch_anchor', True),
-            need_init=True,
-            **kwargs
-        )
+        self.rrt_encoder = None
+        if fusion_type not in ('two_stage_region', 'two_stage_direct'):
+            self.rrt_encoder = MM_RRTEncoder(
+                mlp_dim=mlp_dim,
+                num_modalities=num_modalities,
+                fusion_type=fusion_type,
+                fusion_stage=fusion_stage,
+                fusion_kwargs=fusion_kwargs,
+                use_gated_fusion=use_gated_fusion,
+                use_per_layer_fusion=use_per_layer_fusion,
+                region_num=region_num,
+                n_layers=n_layers,
+                n_heads=n_heads,
+                drop_path=drop_path,
+                drop_out=trans_dropout,
+                epeg=epeg,
+                epeg_k=epeg_k,
+                crmsa_k=crmsa_k,
+                cr_msa=cr_msa,
+                all_shortcut=all_shortcut,
+                crmsa_mlp=crmsa_mlp,
+                crmsa_heads=crmsa_heads,
+                aggregate_modalities=encoder_extra.get('aggregate_modalities', True),
+                use_cross_patch_anchor=encoder_extra.get('use_cross_patch_anchor', True),
+                need_init=True,
+                **kwargs
+            )
         
         # MIL — 通过注册表动态加载（可插拔）
         from models.mil_registry import MIL_REGISTRY
@@ -912,8 +920,9 @@ class MM_RRT_ABMIL(nn.Module):
             'num_classes': self.num_classes,
             'mil_type': self.mil_type,
             'fusion_type': self.rrt_encoder.layers[0].modality_fusion.__class__.__name__ \
-                if self.num_modalities > 1 and hasattr(self.rrt_encoder.layers[0], 'modality_fusion') \
-                and self.rrt_encoder.layers[0].modality_fusion else 'None'
+                if (self.num_modalities > 1 and self.rrt_encoder is not None
+                    and hasattr(self.rrt_encoder.layers[0], 'modality_fusion')
+                    and self.rrt_encoder.layers[0].modality_fusion) else 'None'
         }
 
 

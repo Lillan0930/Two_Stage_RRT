@@ -1,0 +1,24 @@
+{
+  "normal_001": {
+    "n_patches_he": 395,
+    "n_patches_pr": 395,
+    "coordinate_identical": true,
+    "tile_cos_diag": 0.6327381134033203,
+    "tile_cos_shuffled": 0.4953228533267975,
+    "tile_cos_gap": 0.13741526007652283,
+    "patch_cos_diag": 0.6580134034156799,
+    "patch_cos_shuffled": 0.5848458409309387,
+    "patch_cos_gap": 0.07316756248474121
+  },
+  "tumor_001": {
+    "n_patches_he": 1488,
+    "n_patches_pr": 1488,
+    "coordinate_identical": true,
+    "tile_cos_diag": 0.6308242678642273,
+    "tile_cos_shuffled": 0.45663803815841675,
+    "tile_cos_gap": 0.17418622970581055,
+    "patch_cos_diag": 0.6523424983024597,
+    "patch_cos_shuffled": 0.5320550799369812,
+    "patch_cos_gap": 0.12028741836547852
+  }
+}
