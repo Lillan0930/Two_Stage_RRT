@@ -1,0 +1,92 @@
+[
+  {
+    "model": "he_only",
+    "seed": 42,
+    "saved_auc": 0.8344387755102041,
+    "recomputed_auc": 0.8344387755102041,
+    "diff": 0.0,
+    "pass": true,
+    "checkpoint_epoch": 7,
+    "best_epoch_from_result": 7
+  },
+  {
+    "model": "he_only",
+    "seed": 123,
+    "saved_auc": 0.8614795918367347,
+    "recomputed_auc": 0.8614795918367347,
+    "diff": 0.0,
+    "pass": true,
+    "checkpoint_epoch": 4,
+    "best_epoch_from_result": 4
+  },
+  {
+    "model": "he_only",
+    "seed": 456,
+    "saved_auc": 0.8142857142857143,
+    "recomputed_auc": 0.8142857142857143,
+    "diff": 0.0,
+    "pass": true,
+    "checkpoint_epoch": 6,
+    "best_epoch_from_result": 6
+  },
+  {
+    "model": "staining_msa",
+    "seed": 42,
+    "saved_auc": 0.8505102040816327,
+    "recomputed_auc": 0.8505102040816327,
+    "diff": 0.0,
+    "pass": true,
+    "checkpoint_epoch": 10,
+    "best_epoch_from_result": 10
+  },
+  {
+    "model": "staining_msa",
+    "seed": 123,
+    "saved_auc": 0.835969387755102,
+    "recomputed_auc": 0.835969387755102,
+    "diff": 0.0,
+    "pass": true,
+    "checkpoint_epoch": 11,
+    "best_epoch_from_result": 11
+  },
+  {
+    "model": "staining_msa",
+    "seed": 456,
+    "saved_auc": 0.8448979591836735,
+    "recomputed_auc": 0.8448979591836735,
+    "diff": 0.0,
+    "pass": true,
+    "checkpoint_epoch": 11,
+    "best_epoch_from_result": 11
+  },
+  {
+    "model": "he_residual_cross",
+    "seed": 42,
+    "saved_auc": 0.8405612244897959,
+    "recomputed_auc": 0.8405612244897959,
+    "diff": 0.0,
+    "pass": true,
+    "checkpoint_epoch": 9,
+    "best_epoch_from_result": 9
+  },
+  {
+    "model": "he_residual_cross",
+    "seed": 123,
+    "saved_auc": 0.8908163265306123,
+    "recomputed_auc": 0.8908163265306123,
+    "diff": 0.0,
+    "pass": true,
+    "checkpoint_epoch": 12,
+    "best_epoch_from_result": 12
+  },
+  {
+    "model": "he_residual_cross",
+    "seed": 456,
+    "saved_auc": 0.8551020408163265,
+    "recomputed_auc": 0.8551020408163265,
+    "diff": 0.0,
+    "pass": true,
+    "checkpoint_epoch": 6,
+    "best_epoch_from_result": 6
+  }
+]

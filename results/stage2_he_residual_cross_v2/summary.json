@@ -1,0 +1,173 @@
+{
+  "task": "stage2_he_residual_cross_v2",
+  "evaluation_protocol": "Train / Val-as-Test",
+  "protocol_note": "official test set \u5728\u8bad\u7ec3\u4e2d\u88ab\u7528\u4e8e checkpoint selection / early stopping\uff0c\u5c5e\u65e2\u5b9a val-as-test \u5f00\u53d1\u534f\u8bae\uff0c\u975e\u4e25\u683c\u610f\u4e49\u7684\u72ec\u7acb untouched test",
+  "condition": {
+    "label": "HE Residual Cross v2",
+    "stage2_type": "he_residual_cross_v2",
+    "per_seed_auc": {
+      "42": 0.8418367346938774,
+      "123": 0.8755102040816327,
+      "456": 0.8139030612244897
+    },
+    "mean_auc": 0.84375,
+    "std_auc": 0.025187370523787177,
+    "mean_acc": 0.7984496124031008,
+    "std_acc": 0.0,
+    "mean_f1": 0.7618543485149655,
+    "std_f1": 0.006131395763464708,
+    "mean_sensitivity_tumor": 0.5374149659863946,
+    "mean_specificity_tumor": 0.9583333333333334,
+    "mean_sensitivity_macro": 0.747874149659864,
+    "mean_specificity_macro": 0.747874149659864,
+    "per_seed_acc": {
+      "42": 0.7984496124031008,
+      "123": 0.7984496124031008,
+      "456": 0.7984496124031008
+    },
+    "per_seed_f1": {
+      "42": 0.7575187969924811,
+      "123": 0.7575187969924811,
+      "456": 0.7705254515599342
+    },
+    "per_seed_sensitivity_tumor": {
+      "42": 0.5102040816326531,
+      "123": 0.5102040816326531,
+      "456": 0.5918367346938775
+    },
+    "per_seed_specificity_tumor": {
+      "42": 0.975,
+      "123": 0.975,
+      "456": 0.925
+    },
+    "best_epoch": {
+      "42": 4,
+      "123": 12,
+      "456": 19
+    },
+    "actual_optimizer_lrs": {
+      "he_projection": 0.0001,
+      "pr_projection": 0.0001,
+      "he_rrt": 0.0001,
+      "pr_rrt": 0.0001,
+      "stage2": 0.0001,
+      "abmil": 0.0001
+    }
+  },
+  "paired_delta_auc": {
+    "v2_minus_he": {
+      "common_seeds": [
+        "123",
+        "42",
+        "456"
+      ],
+      "per_seed_delta": {
+        "123": 0.014031,
+        "42": 0.007398,
+        "456": -0.000383
+      },
+      "mean_delta": 0.007015306122448939,
+      "std_delta": 0.005890408685318709
+    },
+    "v2_minus_v1": {
+      "common_seeds": [
+        "123",
+        "42",
+        "456"
+      ],
+      "per_seed_delta": {
+        "123": -0.015306,
+        "42": 0.001276,
+        "456": -0.041199
+      },
+      "mean_delta": -0.018409863945578236,
+      "std_delta": 0.017478472078801644
+    }
+  },
+  "reused_baselines": {
+    "he_only": {
+      "per_seed_auc": {
+        "42": 0.8344387755102041,
+        "123": 0.8614795918367347,
+        "456": 0.8142857142857143
+      }
+    },
+    "he_residual_cross_v1": {
+      "per_seed_auc": {
+        "42": 0.8405612244897959,
+        "123": 0.8908163265306123,
+        "456": 0.8551020408163265
+      }
+    },
+    "source": "results/stage2_he_residual_cross_val_as_test/summary.json"
+  },
+  "protocol": {
+    "train": 270,
+    "val_as_test": 129,
+    "monitor": "val_auc",
+    "mode": "max",
+    "patience": 10,
+    "num_epochs": 80,
+    "scheduler": "cosine",
+    "sampling": "random",
+    "train_per_epoch": true,
+    "val_as_test_per_epoch": false,
+    "batch_size": 1,
+    "num_workers": 2,
+    "max_patches": 2500,
+    "lr": 0.0001,
+    "unified_lr": true,
+    "weight_decay": 1e-05,
+    "dropout": 0.25,
+    "abmil_hidden_dim": 256,
+    "label_smoothing": 0.0,
+    "aux_loss_weight": 0.0,
+    "modality_dropout": 0.0,
+    "kd_enabled": false,
+    "model_seed": [
+      42,
+      123,
+      456
+    ],
+    "sampling_seed": [
+      42,
+      123,
+      456
+    ],
+    "shuffle_seed": "DataLoader shuffle=True via torch RNG (set_seed(model_seed))"
+  },
+  "stage1_encoder_cfg": {
+    "HE": {
+      "region_num": 4,
+      "epeg_k": 9,
+      "crmsa_k": 3,
+      "n_heads": 4,
+      "drop_path": 0.0
+    },
+    "PR": {
+      "region_num": 8,
+      "epeg_k": 15,
+      "crmsa_k": 5,
+      "n_heads": 8,
+      "drop_path": 0.11554210024949738
+    }
+  },
+  "stage2_cfg": {
+    "region_num": 4,
+    "crmsa_heads": 8,
+    "crmsa_k": 3,
+    "drop_out": 0.1,
+    "drop_path": 0.0,
+    "epeg": false,
+    "epeg_k": 15,
+    "crmsa_mlp": false,
+    "ffn": false,
+    "qkv_bias": false,
+    "temperature": 0.2,
+    "value_centering": true,
+    "residual_scale": 0.1,
+    "disable_cross": false
+  },
+  "pretrained_loaded": false,
+  "initialization": "random_from_scratch"
+}

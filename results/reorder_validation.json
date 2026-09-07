@@ -1,0 +1,58 @@
+{
+  "normal_001_HE": {
+    "n_patch_old": 395,
+    "n_patch_sorted": 395,
+    "count_ok": true,
+    "coord_set_equal": true,
+    "sorted_order_equal": true,
+    "n": 6320,
+    "cos_mean": 0.692595362663269,
+    "cos_median": 0.7544558048248291,
+    "cos_min": 0.1323028802871704,
+    "cos_max": 1.000000238418579,
+    "l2_mean": 2.901806592941284,
+    "max_abs_diff": 1.9085559844970703
+  },
+  "normal_001_PR": {
+    "n_patch_old": 395,
+    "n_patch_sorted": 395,
+    "count_ok": true,
+    "coord_set_equal": true,
+    "sorted_order_equal": true,
+    "n": 6320,
+    "cos_mean": 0.7174994945526123,
+    "cos_median": 0.7195454835891724,
+    "cos_min": 0.2563140094280243,
+    "cos_max": 1.000000238418579,
+    "l2_mean": 2.854548215866089,
+    "max_abs_diff": 1.4939796924591064
+  },
+  "tumor_001_HE": {
+    "n_patch_old": 1488,
+    "n_patch_sorted": 1488,
+    "count_ok": true,
+    "coord_set_equal": true,
+    "sorted_order_equal": true,
+    "n": 23808,
+    "cos_mean": 0.6385021805763245,
+    "cos_median": 0.6969879865646362,
+    "cos_min": 0.06740723550319672,
+    "cos_max": 1.000000238418579,
+    "l2_mean": 3.192424774169922,
+    "max_abs_diff": 2.072889804840088
+  },
+  "tumor_001_PR": {
+    "n_patch_old": 1488,
+    "n_patch_sorted": 1488,
+    "count_ok": true,
+    "coord_set_equal": true,
+    "sorted_order_equal": true,
+    "n": 23808,
+    "cos_mean": 0.6947088837623596,
+    "cos_median": 0.6868209838867188,
+    "cos_min": 0.1654416173696518,
+    "cos_max": 1.0000001192092896,
+    "l2_mean": 3.031405448913574,
+    "max_abs_diff": 2.069171905517578
+  }
+}

@@ -1,0 +1,41 @@
+{
+  "grad_norms": {
+    "HE RRT (rrt_he)": {
+      "l2_norm": 14.774952646888009,
+      "n_params_with_grad": 17
+    },
+    "PR RRT (rrt_ihc)": {
+      "l2_norm": 0.9548760285640241,
+      "n_params_with_grad": 17
+    },
+    "phi_he": {
+      "l2_norm": 0.6647999651574333,
+      "n_params_with_grad": 1
+    },
+    "phi_pr": {
+      "l2_norm": 0.13050504653543482,
+      "n_params_with_grad": 1
+    },
+    "W_q_he (w_q)": {
+      "l2_norm": 0.002762354153885153,
+      "n_params_with_grad": 2
+    },
+    "W_k_pr (w_k)": {
+      "l2_norm": 0.002710025112416791,
+      "n_params_with_grad": 2
+    },
+    "W_v_pr (w_v)": {
+      "l2_norm": 1.6548924106025569,
+      "n_params_with_grad": 2
+    },
+    "W_out": {
+      "l2_norm": 2.1076821271690838,
+      "n_params_with_grad": 2
+    },
+    "ABMIL (mil)": {
+      "l2_norm": 15.911569767627832,
+      "n_params_with_grad": 8
+    }
+  },
+  "params_with_grad_none": []
+}

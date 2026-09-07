@@ -1,0 +1,50 @@
+{
+  "he_only": {
+    "total": 2763051,
+    "trainable": 2763051,
+    "by_family": {
+      "patch_to_emb.0 (HE proj)": 393728,
+      "mil (ABMIL)": 263427,
+      "rrt_he (HE RRT)": 2105896
+    }
+  },
+  "staining_msa": {
+    "total": 6317995,
+    "trainable": 6317995,
+    "by_family": {
+      "patch_to_emb.0 (HE proj)": 393728,
+      "patch_to_emb.1 (PR proj)": 393728,
+      "mil (ABMIL)": 263427,
+      "cross_region_mod (Stage2)": 1054208,
+      "rrt_he (HE RRT)": 2105896,
+      "rrt_ihc (PR RRT)": 2107008
+    }
+  },
+  "he_residual_cross": {
+    "total": 6321579,
+    "trainable": 6321579,
+    "by_family": {
+      "patch_to_emb.0 (HE proj)": 393728,
+      "patch_to_emb.1 (PR proj)": 393728,
+      "mil (ABMIL)": 263427,
+      "cross_region_mod (Stage2)": 1057792,
+      "rrt_he (HE RRT)": 2105896,
+      "rrt_ihc (PR RRT)": 2107008
+    },
+    "invariants": {
+      "rrt_he is rrt_ihc": false,
+      "phi_he is phi_pr": false,
+      "route_norm_he is route_norm_pr": false,
+      "attn_norm_he is attn_norm_pr": false,
+      "residual_scale_is_buffer": false,
+      "residual_scale_value": 0.10000000149011612,
+      "residual_scale_in_params": false,
+      "disable_cross": false,
+      "drop_path_identity": true,
+      "stage2_type": "he_residual_cross",
+      "has_w_q_k_v_out": true,
+      "no_out_norm": true,
+      "no_ffn": true
+    }
+  }
+}

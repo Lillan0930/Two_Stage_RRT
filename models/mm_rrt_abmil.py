@@ -282,6 +282,24 @@ class MM_RRT_ABMIL(nn.Module):
                     residual_scale=_get(stage2_cfg, 'residual_scale', 0.1),
                     disable_cross=_get(stage2_cfg, 'disable_cross', False),
                 )
+            elif self.stage2_type == 'he_residual_cross_v2':
+                from models.he_residual_cross_crmsa_v2 import HEResidualCrossCRMSAv2
+                self.cross_region_mod = HEResidualCrossCRMSAv2(
+                    dim=mlp_dim,
+                    num_heads=_get(stage2_cfg, 'crmsa_heads', 8),
+                    region_num=_get(stage2_cfg, 'region_num', 4),
+                    crmsa_k=_get(stage2_cfg, 'crmsa_k', 3),
+                    drop_out=_get(stage2_cfg, 'drop_out', 0.1),
+                    drop_path=_get(stage2_cfg, 'drop_path', 0.0),
+                    epeg=_get(stage2_cfg, 'epeg', False),
+                    epeg_k=_get(stage2_cfg, 'epeg_k', 15),
+                    crmsa_mlp=_get(stage2_cfg, 'crmsa_mlp', False),
+                    ffn=_get(stage2_cfg, 'ffn', False),
+                    qkv_bias=_get(stage2_cfg, 'qkv_bias', True),
+                    residual_scale=_get(stage2_cfg, 'residual_scale', 0.1),
+                    disable_cross=_get(stage2_cfg, 'disable_cross', False),
+                    tau=_get(stage2_cfg, 'temperature', 0.2),
+                )
             elif self.stage2_type == 'concat':
                 # Ablation: no cross-staining fusion — plain concat of Stage-1 outputs.
                 self.cross_region_mod = None
@@ -296,7 +314,8 @@ class MM_RRT_ABMIL(nn.Module):
             else:
                 raise ValueError(
                     f"Unknown stage2_type: {self.stage2_type!r}. Valid types: "
-                    f"'staining_msa', 'he_residual_cross', 'concat', 'he_anchor'."
+                    f"'staining_msa', 'he_residual_cross', 'he_residual_cross_v2', "
+                    f"'concat', 'he_anchor'."
                 )
             # HE encoder (official R²T, independent weights) — 结构参数可用 encoder_cfg 覆盖
             self.rrt_he = RRTEncoder(
@@ -571,6 +590,9 @@ class MM_RRT_ABMIL(nn.Module):
             elif self.stage2_type == 'he_residual_cross':
                 z_final = self.cross_region_mod(z_he, z_ihc)
                 fusion_stats = {'two_stage_region': True, 'stage2': 'he_residual_cross'}
+            elif self.stage2_type == 'he_residual_cross_v2':
+                z_final = self.cross_region_mod(z_he, z_ihc)
+                fusion_stats = {'two_stage_region': True, 'stage2': 'he_residual_cross_v2'}
             elif self.stage2_type == 'concat':
                 # Ablation: no cross-staining fusion — plain concat of Stage-1 outputs.
                 z_final = torch.cat([z_he, z_ihc], dim=1)

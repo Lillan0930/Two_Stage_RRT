@@ -1,0 +1,53 @@
+{
+  "ridge_alpha": 1.0,
+  "C_grid": [
+    0.001,
+    0.01,
+    0.1,
+    1.0,
+    10.0,
+    100.0,
+    1000.0
+  ],
+  "seeds": [
+    {
+      "seed": 42,
+      "embed_equiv_max_abs": 0.0,
+      "embed_equiv_classifier_z": 0.0,
+      "n_train": 216,
+      "n_val": 54,
+      "n_test": 129,
+      "HE_auc": 0.8413265306122449,
+      "HE_val_auc": 0.953125,
+      "HE_C": 0.001,
+      "PR_auc": 0.6956632653061224,
+      "PR_val_auc": 0.9417613636363636,
+      "PR_C": 0.01,
+      "residual_auc": 0.6364795918367349,
+      "residual_val_auc": 0.6732954545454544,
+      "residual_C": 1.0,
+      "HE_residual_auc": 0.6571428571428571,
+      "HE_residual_val_auc": 0.9460227272727273,
+      "HE_residual_C": 0.001,
+      "delta_vs_HE": -0.1841836734693878,
+      "residual_norm_ratio": 0.4054338357305174,
+      "cos_he_pr": 0.02112204833556275,
+      "cos_he_residual": 0.004444150407769376,
+      "r2_he_to_pr_train": 0.9773101571678607
+    }
+  ],
+  "mean": {
+    "HE": 0.8413265306122449,
+    "PR": 0.6956632653061224,
+    "residual": 0.6364795918367349,
+    "HE_residual": 0.6571428571428571,
+    "delta": -0.1841836734693878
+  },
+  "std": {
+    "HE": 0.0,
+    "PR": 0.0,
+    "residual": 0.0,
+    "HE_residual": 0.0,
+    "delta": 0.0
+  }
+}
