@@ -1,0 +1,15 @@
+{
+  "seed": 456,
+  "best_epoch": 6,
+  "best_val_auc": 0.9758522727272727,
+  "test_auc": 0.7625,
+  "test_acc": 0.6201550387596899,
+  "test_f1": 0.6016260162601625,
+  "test_sensitivity": 0.7551020408163265,
+  "test_specificity": 0.5375,
+  "test_precision": 0.5,
+  "train_time_s": 118.28069400787354,
+  "stage2_type": null,
+  "residual_scale": null,
+  "disable_cross": null
+}

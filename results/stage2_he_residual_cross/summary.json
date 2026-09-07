@@ -1,0 +1,117 @@
+{
+  "task": "stage2_he_residual_cross",
+  "conditions": {
+    "he_rrt_he_only": {
+      "per_seed_test_auc": {
+        "42": 0.7771683673469387,
+        "123": 0.8413265306122449,
+        "456": 0.7625
+      },
+      "per_seed_val_auc": {
+        "42": 0.9659090909090909,
+        "123": 0.9886363636363636,
+        "456": 0.9758522727272727
+      },
+      "best_epoch": {
+        "42": 26,
+        "123": 37,
+        "456": 6
+      },
+      "mean_test_auc": 0.7936649659863946,
+      "std_test_auc": 0.034229702570470096,
+      "mean_val_auc": 0.9767992424242425
+    },
+    "staining_msa": {
+      "per_seed_test_auc": {
+        "42": 0.815561224489796,
+        "123": 0.8334183673469387,
+        "456": 0.7987244897959183
+      },
+      "per_seed_val_auc": {
+        "42": 0.9588068181818181,
+        "123": 0.9829545454545454,
+        "456": 0.9559659090909091
+      },
+      "best_epoch": {
+        "42": 15,
+        "123": 24,
+        "456": 14
+      },
+      "mean_test_auc": 0.8159013605442177,
+      "std_test_auc": 0.014165758110856358,
+      "mean_val_auc": 0.9659090909090908
+    },
+    "he_residual_cross": {
+      "per_seed_test_auc": {
+        "42": 0.7543367346938776,
+        "123": 0.8283163265306123,
+        "456": 0.7793367346938777
+      },
+      "per_seed_val_auc": {
+        "42": 0.9630681818181819,
+        "123": 0.9730113636363636,
+        "456": 0.9829545454545455
+      },
+      "best_epoch": {
+        "42": 18,
+        "123": 8,
+        "456": 12
+      },
+      "mean_test_auc": 0.7873299319727892,
+      "std_test_auc": 0.03072635572422219,
+      "mean_val_auc": 0.9730113636363636
+    }
+  },
+  "protocol": {
+    "train": 216,
+    "val": 54,
+    "test": 129,
+    "monitor": "val_auc",
+    "mode": "max",
+    "patience": 10,
+    "num_epochs": 80,
+    "scheduler": "cosine",
+    "lr": 0.0001,
+    "unified_lr": true,
+    "sampling": "random",
+    "max_patches": 2500,
+    "batch_size": 1,
+    "num_workers": 2,
+    "dropout": 0.25,
+    "abmil_hidden_dim": 256,
+    "label_smoothing": 0.0,
+    "aux_loss_weight": 0.0,
+    "modality_dropout": 0.0,
+    "kd_enabled": false
+  },
+  "stage1_encoder_cfg": {
+    "HE": {
+      "region_num": 4,
+      "epeg_k": 9,
+      "crmsa_k": 3,
+      "n_heads": 4,
+      "drop_path": 0.0
+    },
+    "PR": {
+      "region_num": 8,
+      "epeg_k": 15,
+      "crmsa_k": 5,
+      "n_heads": 8,
+      "drop_path": 0.11554210024949738
+    }
+  },
+  "stage2_cfg": {
+    "region_num": 4,
+    "crmsa_heads": 8,
+    "crmsa_k": 3,
+    "drop_out": 0.1,
+    "drop_path": 0.0,
+    "epeg": false,
+    "epeg_k": 15,
+    "crmsa_mlp": false,
+    "ffn": false,
+    "qkv_bias": true
+  },
+  "pretrained_loaded": false,
+  "initialization": "random_from_scratch"
+}

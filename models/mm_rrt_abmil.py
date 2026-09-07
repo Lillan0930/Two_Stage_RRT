@@ -245,8 +245,10 @@ class MM_RRT_ABMIL(nn.Module):
                 return cfg.get(key, default)
 
             # Stage 2 模块选择:
-            #   'staining_msa' (默认) — "染色即区域" 跨染色 MSA 对称融合
-            #   'he_anchor'            — 旧版 HE 锚定 cross-attn (消融对照)
+            #   'staining_msa'      (默认) — "染色即区域" 跨染色 MSA 对称融合
+            #   'he_residual_cross'        — 有向 HE→PR cross-attn + HE 残差写回
+            #   'he_anchor'                — 旧版 HE 锚定 cross-attn (消融对照)
+            #   'concat'                   — 无融合，纯拼接 Stage-1 输出 (消融)
             self.stage2_type = kwargs.get('stage2_type', 'staining_msa')
             if self.stage2_type == 'staining_msa':
                 from models.cross_staining_crmsa import CrossStainingCRMSA
@@ -263,16 +265,38 @@ class MM_RRT_ABMIL(nn.Module):
                     ffn=_get(stage2_cfg, 'ffn', False),
                     qkv_bias=_get(stage2_cfg, 'qkv_bias', True),
                 )
+            elif self.stage2_type == 'he_residual_cross':
+                from models.he_residual_cross_crmsa import HEResidualCrossCRMSA
+                self.cross_region_mod = HEResidualCrossCRMSA(
+                    dim=mlp_dim,
+                    num_heads=_get(stage2_cfg, 'crmsa_heads', 8),
+                    region_num=_get(stage2_cfg, 'region_num', 4),
+                    crmsa_k=_get(stage2_cfg, 'crmsa_k', 3),
+                    drop_out=_get(stage2_cfg, 'drop_out', 0.1),
+                    drop_path=_get(stage2_cfg, 'drop_path', 0.0),
+                    epeg=_get(stage2_cfg, 'epeg', False),
+                    epeg_k=_get(stage2_cfg, 'epeg_k', 15),
+                    crmsa_mlp=_get(stage2_cfg, 'crmsa_mlp', False),
+                    ffn=_get(stage2_cfg, 'ffn', False),
+                    qkv_bias=_get(stage2_cfg, 'qkv_bias', True),
+                    residual_scale=_get(stage2_cfg, 'residual_scale', 0.1),
+                    disable_cross=_get(stage2_cfg, 'disable_cross', False),
+                )
             elif self.stage2_type == 'concat':
                 # Ablation: no cross-staining fusion — plain concat of Stage-1 outputs.
                 self.cross_region_mod = None
-            else:
+            elif self.stage2_type == 'he_anchor':
                 from models.cross_region_reembedding import CrossRegionReembedding
                 self.cross_region_mod = CrossRegionReembedding(
                     dim=mlp_dim, crmsa_k=crmsa_k, crmsa_heads=n_heads,
                     region_num=region_num, epeg=True, epeg_k=epeg_k,
                     drop_out=trans_dropout if isinstance(trans_dropout, (int, float)) else 0.1,
                     drop_path=drop_path,
+                )
+            else:
+                raise ValueError(
+                    f"Unknown stage2_type: {self.stage2_type!r}. Valid types: "
+                    f"'staining_msa', 'he_residual_cross', 'concat', 'he_anchor'."
                 )
             # HE encoder (official R²T, independent weights) — 结构参数可用 encoder_cfg 覆盖
             self.rrt_he = RRTEncoder(
@@ -537,12 +561,16 @@ class MM_RRT_ABMIL(nn.Module):
             if len(z_he.shape) == 2: z_he = z_he.unsqueeze(0)
             if len(z_ihc.shape) == 2: z_ihc = z_ihc.unsqueeze(0)
 
-            # Stage 2: symmetric cross-staining official-style CR-MSA.
-            # HE and PR jointly interact at routing-region level; both modalities
-            # are dispatched back and concatenated. Output: [B, N_HE + N_PR, D].
+            # Stage 2: directed / symmetric cross-staining CR-MSA.
+            # 'staining_msa' and 'concat' produce [B, N_HE + N_PR, D];
+            # 'he_residual_cross' keeps only HE [B, N_HE, D] and writes a
+            # PR-guided residual onto it.
             if self.stage2_type == 'staining_msa':
                 z_final = self.cross_region_mod([z_he, z_ihc])
                 fusion_stats = {'two_stage_region': True, 'stage2': 'staining_msa'}
+            elif self.stage2_type == 'he_residual_cross':
+                z_final = self.cross_region_mod(z_he, z_ihc)
+                fusion_stats = {'two_stage_region': True, 'stage2': 'he_residual_cross'}
             elif self.stage2_type == 'concat':
                 # Ablation: no cross-staining fusion — plain concat of Stage-1 outputs.
                 z_final = torch.cat([z_he, z_ihc], dim=1)
