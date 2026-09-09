@@ -21,6 +21,7 @@ Thumbs.db
 
 # Experiment outputs
 work_results/
+_smoke/
 *.pt
 *.pth
 

@@ -228,6 +228,12 @@ class Trainer:
         # 辅助分类头 (每个模态一个，在 create_model 中初始化)
         self.aux_classifiers = None
 
+        # ── v5: PR value-memory 训练期辅助分类监督 ──
+        # L = CE(fused, y) + β·CE(pr_value, y)。β 从 training.pr_value_aux_weight
+        # 读取（默认 0=禁用）。与旧 aux_loss_weight / aux_classifiers 路径无关：
+        # v5 必须保持 aux_loss_weight=0 以免触发旧的 per-modality 辅助头。
+        self.pr_value_aux_weight = config['training'].get('pr_value_aux_weight', 0.0)
+
         # ── KD: HE → PR confidence-weighted distillation ──
         self.kd_enabled = config['training'].get('kd_enabled', False)
         self.kd_lambda = config['training'].get('kd_lambda', 0.01)
@@ -776,6 +782,8 @@ class Trainer:
                     batch_logits = []
                     all_aux_logits = [[] for _ in range(num_modalities)] if use_aux else None
                     logits_he_batch, logits_ihc_lists_batch = [], []
+                    pr_value_logits_batch = []
+                    pr_value_has_valid_batch = []
                     for sample_features in features_list_by_sample:
                         sample_features = [f.to(self.device) for f in sample_features]
                         out = model(sample_features, return_features=use_aux)
@@ -797,6 +805,10 @@ class Trainer:
                         elif isinstance(gate_stats, dict) and 'logits_pr' in gate_stats:
                             logits_he_batch.append(gate_stats['logits_he'].detach())
                             logits_ihc_lists_batch.append([gate_stats['logits_pr']])
+                        # v5: PR value-memory auxiliary logits
+                        if isinstance(gate_stats, dict) and gate_stats.get('pr_value_logits') is not None:
+                            pr_value_logits_batch.append(gate_stats['pr_value_logits'])
+                            pr_value_has_valid_batch.append(gate_stats['pr_value_has_valid'])
                     batch_logits = torch.cat(batch_logits, dim=0)
                     # Partial alignment aux losses
                     pa_loss = 0.0
@@ -813,6 +825,13 @@ class Trainer:
                     I = torch.eye(W.size(0), device=W.device, dtype=W.dtype)
                     id_loss = 0.001 * ((W - I) ** 2).mean()
                 loss = criterion(batch_logits, labels) + pa_loss + id_loss
+                # ── v5: PR value-memory auxiliary classification supervision ──
+                if self.pr_value_aux_weight > 0 and pr_value_logits_batch:
+                    pv_logits = torch.cat(pr_value_logits_batch, dim=0).float()
+                    pv_valid = torch.cat(pr_value_has_valid_batch, dim=0)
+                    if pv_valid.any():
+                        pv_ce = F.cross_entropy(pv_logits[pv_valid], labels[pv_valid])
+                        loss = loss + self.pr_value_aux_weight * pv_ce
                 # ── HE→PR confidence-weighted KD ──
                 kd_loss = torch.tensor(0.0, device=self.device)
                 kd_stats = {}
@@ -861,6 +880,8 @@ class Trainer:
                 batch_logits = []
                 all_aux_logits = [[] for _ in range(num_modalities)] if use_aux else None
                 logits_he_batch, logits_ihc_lists_batch = [], []
+                pr_value_logits_batch = []
+                pr_value_has_valid_batch = []
                 for sample_features in features_list_by_sample:
                     sample_features = [f.to(self.device) for f in sample_features]
                     out = model(sample_features, return_features=use_aux)
@@ -882,6 +903,10 @@ class Trainer:
                     elif isinstance(gate_stats, dict) and 'logits_pr' in gate_stats:
                         logits_he_batch.append(gate_stats['logits_he'].detach())
                         logits_ihc_lists_batch.append([gate_stats['logits_pr']])
+                    # v5: PR value-memory auxiliary logits (shared gradient-carrying V_tilde)
+                    if isinstance(gate_stats, dict) and gate_stats.get('pr_value_logits') is not None:
+                        pr_value_logits_batch.append(gate_stats['pr_value_logits'])
+                        pr_value_has_valid_batch.append(gate_stats['pr_value_has_valid'])
                 batch_logits = torch.cat(batch_logits, dim=0)
                 # Partial alignment aux losses
                 pa_loss = 0.0
@@ -898,6 +923,13 @@ class Trainer:
                     I = torch.eye(W.size(0), device=W.device, dtype=W.dtype)
                     id_loss = 0.001 * ((W - I) ** 2).mean()
                 loss = criterion(batch_logits, labels) + pa_loss + id_loss
+                # ── v5: PR value-memory auxiliary classification supervision ──
+                if self.pr_value_aux_weight > 0 and pr_value_logits_batch:
+                    pv_logits = torch.cat(pr_value_logits_batch, dim=0)
+                    pv_valid = torch.cat(pr_value_has_valid_batch, dim=0)
+                    if pv_valid.any():
+                        pv_ce = F.cross_entropy(pv_logits[pv_valid], labels[pv_valid])
+                        loss = loss + self.pr_value_aux_weight * pv_ce
                 # ── HE→PR confidence-weighted KD ──
                 kd_loss = torch.tensor(0.0, device=self.device)
                 kd_stats = {}
@@ -985,6 +1017,7 @@ class Trainer:
         all_he_probs = []   # accumulate for per-path AUC
         all_pr_probs = []   # accumulate for PR-path AUC
         all_ihc_probs = []  # accumulate for per-path AUC (legacy IHC)
+        all_pr_value_probs = []  # accumulate for v5 auxiliary PR-value head AUC
         gate_stats = None
 
         with torch.inference_mode():
@@ -1010,6 +1043,9 @@ class Trainer:
                     gate_stats = out[3] if len(out) > 3 else None  # gate stats from residual fusion
                     aux_loss = out[4] if len(out) > 4 else torch.tensor(0.0, device=logits.device)
                     batch_logits.append(logits)
+                    if gate_stats and gate_stats.get('pr_value_logits') is not None:
+                        all_pr_value_probs.append(
+                            torch.softmax(gate_stats['pr_value_logits'].float(), dim=-1))
                     if gate_stats and 'logits_he' in gate_stats:
                         all_he_probs.append(torch.softmax(gate_stats['logits_he'].float(), dim=-1))
                         if 'logits_ihc_list' in gate_stats:
@@ -1120,7 +1156,14 @@ class Trainer:
                 metrics['auc_pr'] = float(roc_auc_score(all_labels_np, pr_probs_np))
             except Exception:
                 metrics['auc_pr'] = 0.0
-        del all_he_probs, all_pr_probs, all_ihc_probs
+        if all_pr_value_probs:
+            try:
+                from sklearn.metrics import roc_auc_score
+                pv_probs_np = torch.cat(all_pr_value_probs, dim=0)[:, 1].cpu().numpy()
+                metrics['auc_pr_value'] = float(roc_auc_score(all_labels_np, pv_probs_np))
+            except Exception:
+                metrics['auc_pr_value'] = 0.0
+        del all_he_probs, all_pr_probs, all_ihc_probs, all_pr_value_probs
 
         if return_probs:
             return avg_loss, metrics, all_probs_np, all_labels_np
@@ -1367,6 +1410,7 @@ class Trainer:
                 val_auc = val_metrics.get('auc', 0.0)
                 val_auc_he = val_metrics.get('auc_he', None)
                 val_auc_pr = val_metrics.get('auc_pr', None)
+                val_auc_pr_value = val_metrics.get('auc_pr_value', None)
                 self.val_losses.append(val_loss)
                 self.val_accs.append(val_acc)
                 self.val_aucs.append(val_auc)
@@ -1377,6 +1421,8 @@ class Trainer:
                     extra += f"AUC_HE={val_auc_he:.4f} "
                 if val_auc_pr is not None:
                     extra += f"AUC_PR={val_auc_pr:.4f} "
+                if val_auc_pr_value is not None:
+                    extra += f"AUC_PRval={val_auc_pr_value:.4f} "
                 kd_w = self._get_kd_weight() if self.kd_enabled else 0.0
                 if self.kd_enabled:
                     extra += f"kd_w={kd_w:.4f} "
