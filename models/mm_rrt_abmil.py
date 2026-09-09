@@ -383,6 +383,32 @@ class MM_RRT_ABMIL(nn.Module):
                     tau=_get(stage2_cfg, 'temperature', 0.2),
                     prototype_momentum=_get(stage2_cfg, 'prototype_momentum', 0.99),
                 )
+            elif self.stage2_type == 'he_residual_cross_v7':
+                # v7 = "restore fused gradient": v3 forward structure, but training
+                # loss = CE(M(H), y) + CE(M(F), y) with the SAME MIL on both terms
+                # (no param detach).  Variant A: F = Stage2(H.detach(), P) — HE
+                # encoder gets only HE CE; MIL gets both.  Variant B: F = Stage2(H, P)
+                # — HE encoder and MIL both get both CEs.  Main prediction is
+                # always M(F).  Eval forward == v3.  Training uses `forward_v7`.
+                from models.he_residual_cross_crmsa_v3 import HEResidualCrossCRMSAv3
+                self.v7_fused_he_detach = bool(_get(stage2_cfg, 'v7_fused_he_detach', False))
+                self.cross_region_mod = HEResidualCrossCRMSAv3(
+                    dim=mlp_dim,
+                    num_heads=_get(stage2_cfg, 'crmsa_heads', 8),
+                    region_num=_get(stage2_cfg, 'region_num', 4),
+                    crmsa_k=_get(stage2_cfg, 'crmsa_k', 3),
+                    drop_out=_get(stage2_cfg, 'drop_out', 0.1),
+                    drop_path=_get(stage2_cfg, 'drop_path', 0.0),
+                    epeg=_get(stage2_cfg, 'epeg', False),
+                    epeg_k=_get(stage2_cfg, 'epeg_k', 15),
+                    crmsa_mlp=_get(stage2_cfg, 'crmsa_mlp', False),
+                    ffn=_get(stage2_cfg, 'ffn', False),
+                    qkv_bias=_get(stage2_cfg, 'qkv_bias', True),
+                    residual_scale=_get(stage2_cfg, 'residual_scale', 0.1),
+                    disable_cross=_get(stage2_cfg, 'disable_cross', False),
+                    tau=_get(stage2_cfg, 'temperature', 0.2),
+                    prototype_momentum=_get(stage2_cfg, 'prototype_momentum', 0.99),
+                )
             elif self.stage2_type == 'concat':
                 # Ablation: no cross-staining fusion — plain concat of Stage-1 outputs.
                 self.cross_region_mod = None
@@ -400,6 +426,7 @@ class MM_RRT_ABMIL(nn.Module):
                     f"'staining_msa', 'he_residual_cross', 'he_residual_cross_v2', "
                     f"'he_residual_cross_v3', 'he_residual_cross_v4', "
                     f"'he_residual_cross_v5', 'he_residual_cross_v6', "
+                    f"'he_residual_cross_v7', "
                     f"'concat', 'he_anchor'."
                 )
             # HE encoder (official R²T, independent weights) — 结构参数可用 encoder_cfg 覆盖
@@ -698,6 +725,16 @@ class MM_RRT_ABMIL(nn.Module):
                 # uses `forward_v6` for the two-loss gradient division.
                 z_final = self.cross_region_mod(z_he, z_ihc)
                 fusion_stats = {'two_stage_region': True, 'stage2': 'he_residual_cross_v6'}
+            elif self.stage2_type == 'he_residual_cross_v7':
+                # Eval forward == v3 (normal fused prediction H + α·Δ → M).
+                # Also expose M(Z_HE) for per-epoch HE AUC tracking (§6) — the
+                # main logits are untouched by this extra computation.
+                z_final = self.cross_region_mod(z_he, z_ihc)
+                fusion_stats = {
+                    'two_stage_region': True,
+                    'stage2': 'he_residual_cross_v7',
+                    'logits_he': self.mil(z_he)['logits'],
+                }
             elif self.stage2_type == 'concat':
                 # Ablation: no cross-staining fusion — plain concat of Stage-1 outputs.
                 z_final = torch.cat([z_he, z_ihc], dim=1)
@@ -1117,6 +1154,65 @@ class MM_RRT_ABMIL(nn.Module):
         # ── fused logits: same M, detached params — gradient to fused only ──
         detached_params = {n: p.detach() for n, p in self.mil.named_parameters()}
         fused_logits = functional_call(self.mil, detached_params, fused)['logits']
+
+        return {
+            'he_logits': he_logits,
+            'fused_logits': fused_logits,
+            'fused_features': fused,
+            'z_he': z_he,
+            'z_pr': z_pr,
+        }
+
+    def forward_v7(self, x):
+        """v7 training forward — "restore fused gradient": one encoder pass,
+        two losses through the SAME main ABMIL (no param detach anywhere).
+
+        Variant A (self.v7_fused_he_detach=True):  F = Stage2(H.detach(), P)
+            fused CE → MIL + PR encoder + Stage2 (NOT HE encoder).
+            HE encoder accepts only HE CE; MIL accepts both CEs.
+        Variant B (self.v7_fused_he_detach=False): F = Stage2(H, P)
+            fused CE → HE encoder + MIL + PR encoder + Stage2.
+            HE encoder and MIL both accept both CEs.  No v6-style HE/MIL
+            gradient isolation.
+
+        Returns dict:
+            he_logits:      M(H)  [1, C]
+            fused_logits:   M(F)  [1, C]  — main prediction
+            fused_features: F  [1, N_HE, D]
+            z_he, z_pr:     raw Stage-1 outputs (diagnostics only)
+        """
+        if not isinstance(x, list) or len(x) != 2:
+            raise ValueError(
+                f"v7 forward_v7 expects a list of 2 modality features, got "
+                f"{type(x).__name__}")
+
+        x_list = []
+        for xi in x:
+            if len(xi.shape) == 2:
+                xi = xi.unsqueeze(0)
+            x_list.append(xi)
+
+        x_emb_list = [self.dp(self.patch_to_emb[i](xi))
+                      for i, xi in enumerate(x_list)]
+
+        z_he = self.rrt_he(x_emb_list[0])
+        z_pr = self.rrt_ihc(x_emb_list[1])
+        if len(z_he.shape) == 2:
+            z_he = z_he.unsqueeze(0)
+        if len(z_pr.shape) == 2:
+            z_pr = z_pr.unsqueeze(0)
+
+        # ── HE logits: M(H) — gradient to HE encoder + MIL ──
+        he_logits = self.mil(z_he)['logits']                    # [1, C]
+
+        # ── fused features: F = Stage2(H or H.detach(), P) = H + α·Δ ──
+        he_input = z_he.detach() if self.v7_fused_he_detach else z_he
+        fused = self.cross_region_mod(he_input, z_pr)           # [1, N_HE, D]
+        if len(fused.shape) == 2:
+            fused = fused.unsqueeze(0)
+
+        # ── fused logits: same M, normal call (NO param detach) ──
+        fused_logits = self.mil(fused)['logits']                # [1, C]
 
         return {
             'he_logits': he_logits,

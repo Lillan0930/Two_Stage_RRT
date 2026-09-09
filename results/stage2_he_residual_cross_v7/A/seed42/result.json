@@ -1,0 +1,93 @@
+{
+  "seed": 42,
+  "auc": 0.8326530612244899,
+  "accuracy": 0.7751937984496124,
+  "f1": 0.7229914846353203,
+  "sensitivity_tumor": 0.4489795918367347,
+  "specificity_tumor": 0.975,
+  "sensitivity_macro": 0.7119897959183673,
+  "specificity_macro": 0.7119897959183673,
+  "best_epoch": 2,
+  "checkpoint": "/home/Public/lillan/Two_Sage_RRT-/TwoStageRRT/results/stage2_he_residual_cross_v7/A/seed42/ckpt/best_model.pt",
+  "actual_optimizer_lrs": {
+    "he_projection": 0.0001,
+    "pr_projection": 0.0001,
+    "he_rrt": 0.0001,
+    "pr_rrt": 0.0001,
+    "stage2": 0.0001,
+    "abmil": 0.0001
+  },
+  "train_persistent_workers": false,
+  "initialization": "random_from_scratch",
+  "v7_variant": "A",
+  "v7_loss_he": 0.8940780745336353,
+  "v7_loss_fused": 0.9498284866517425,
+  "v7_epoch_history": [
+    {
+      "epoch": 0,
+      "val_auc": 0.6063775510204082,
+      "val_auc_he": 0.5900510204081634
+    },
+    {
+      "epoch": 1,
+      "val_auc": 0.7206632653061225,
+      "val_auc_he": 0.7165816326530612
+    },
+    {
+      "epoch": 2,
+      "val_auc": 0.8326530612244899,
+      "val_auc_he": 0.8247448979591837
+    },
+    {
+      "epoch": 3,
+      "val_auc": 0.7658163265306123,
+      "val_auc_he": 0.7551020408163265
+    },
+    {
+      "epoch": 4,
+      "val_auc": 0.752295918367347,
+      "val_auc_he": 0.7535714285714286
+    },
+    {
+      "epoch": 5,
+      "val_auc": 0.7025510204081633,
+      "val_auc_he": 0.7066326530612245
+    },
+    {
+      "epoch": 6,
+      "val_auc": 0.7176020408163265,
+      "val_auc_he": 0.7211734693877551
+    },
+    {
+      "epoch": 7,
+      "val_auc": 0.7497448979591836,
+      "val_auc_he": 0.7551020408163266
+    },
+    {
+      "epoch": 8,
+      "val_auc": 0.7304846938775509,
+      "val_auc_he": 0.7364795918367346
+    },
+    {
+      "epoch": 9,
+      "val_auc": 0.7168367346938775,
+      "val_auc_he": 0.7198979591836734
+    },
+    {
+      "epoch": 10,
+      "val_auc": 0.7135204081632653,
+      "val_auc_he": 0.7114795918367347
+    },
+    {
+      "epoch": 11,
+      "val_auc": 0.7040816326530612,
+      "val_auc_he": 0.7061224489795918
+    },
+    {
+      "epoch": 12,
+      "val_auc": 0.7903061224489796,
+      "val_auc_he": 0.7969387755102042
+    }
+  ],
+  "init_hash": "768d6d5269a8550975a8a5d205c020844b495f63e536d3fc4a79cc59d32dfebe"
+}

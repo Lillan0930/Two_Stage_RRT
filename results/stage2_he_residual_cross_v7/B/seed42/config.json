@@ -1,0 +1,126 @@
+{
+  "data": {
+    "dataset_type": "c16",
+    "modalities": [
+      "HE",
+      "PR"
+    ],
+    "dir_mapping": {
+      "HE": "C16_HE_features",
+      "PR": "C16_PR_features"
+    },
+    "train_label_file": "/home/Public/lillan/Two_Sage_RRT-/TwoStageRRT/data/C16_labels/c16_train_labels.csv",
+    "val_label_file": "/home/Public/lillan/Two_Sage_RRT-/TwoStageRRT/data/C16_labels/c16_test_labels.csv",
+    "feature_base_dir": "/home/Public/lillan/features_result/C16_features",
+    "input_dim": 768,
+    "num_classes": 2,
+    "max_patches": 2500,
+    "preload": false,
+    "sampling": "random",
+    "sample_seed": 42,
+    "no_validation": false
+  },
+  "model": {
+    "mil_type": "abmil",
+    "mlp_dim": 512,
+    "dropout": 0.25,
+    "use_gated": false,
+    "region_num": 4,
+    "n_layers": 2,
+    "n_heads": 4,
+    "drop_path": 0.0,
+    "trans_dropout": 0.1,
+    "epeg": true,
+    "epeg_k": 9,
+    "crmsa_k": 3,
+    "cr_msa": true,
+    "all_shortcut": true,
+    "crmsa_heads": 8,
+    "crmsa_mlp": false,
+    "fusion_type": "two_stage_region",
+    "fusion_stage": "middle",
+    "use_gated_fusion": false,
+    "abmil_hidden_dim": 256,
+    "use_mclc": false,
+    "aggregate_modalities": true,
+    "stage2_type": "he_residual_cross_v7",
+    "encoder_cfg": {
+      "HE": {
+        "region_num": 4,
+        "epeg_k": 9,
+        "crmsa_k": 3,
+        "n_heads": 4,
+        "drop_path": 0.0
+      },
+      "PR": {
+        "region_num": 8,
+        "epeg_k": 15,
+        "crmsa_k": 5,
+        "n_heads": 8,
+        "drop_path": 0.11554210024949738
+      }
+    },
+    "stage2_cfg": {
+      "region_num": 4,
+      "crmsa_heads": 8,
+      "crmsa_k": 3,
+      "drop_out": 0.1,
+      "drop_path": 0.0,
+      "epeg": false,
+      "epeg_k": 15,
+      "crmsa_mlp": false,
+      "ffn": false,
+      "qkv_bias": false,
+      "temperature": 0.2,
+      "residual_scale": 0.1,
+      "disable_cross": false,
+      "prototype_momentum": 0.99,
+      "v7_fused_he_detach": false
+    }
+  },
+  "training": {
+    "batch_size": 1,
+    "num_epochs": 80,
+    "learning_rate": 0.0001,
+    "weight_decay": 1e-05,
+    "scheduler": {
+      "type": "cosine"
+    },
+    "use_amp": false,
+    "focal_loss": false,
+    "label_smoothing": 0.0,
+    "kd_enabled": false,
+    "modality_dropout": 0.0,
+    "aux_loss_weight": 0.0,
+    "early_stopping": {
+      "monitor": "val_auc",
+      "mode": "max",
+      "patience": 10
+    },
+    "no_validation": false
+  },
+  "data_split": {
+    "val_start": 100
+  },
+  "environment": {
+    "device": "cuda:0",
+    "num_workers": 2,
+    "seed": 42
+  },
+  "seeds": {
+    "model_seed": 42,
+    "sampling_seed": 42,
+    "shuffle_seed": "DataLoader shuffle=True via torch RNG (set_seed(model_seed))"
+  },
+  "output": {
+    "save_dir": "/home/Public/lillan/Two_Sage_RRT-/TwoStageRRT/results/stage2_he_residual_cross_v7/B/seed42/ckpt",
+    "log_dir": "/home/Public/lillan/Two_Sage_RRT-/TwoStageRRT/results/stage2_he_residual_cross_v7/B/seed42/logs",
+    "img_dir": "/home/Public/lillan/Two_Sage_RRT-/TwoStageRRT/results/stage2_he_residual_cross_v7/B/seed42/img"
+  },
+  "protocol": {
+    "evaluation_protocol": "Train / Val-as-Test",
+    "train": 270,
+    "val_as_test": 129,
+    "note": "official test set \u5728\u8bad\u7ec3\u4e2d\u88ab\u7528\u4e8e checkpoint selection / early stopping\uff0c\u5c5e\u65e2\u5b9a val-as-test \u5f00\u53d1\u534f\u8bae\uff0c\u975e\u4e25\u683c\u610f\u4e49\u7684\u72ec\u7acb untouched test"
+  }
+}

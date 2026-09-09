@@ -1,0 +1,138 @@
+{
+  "seed": 456,
+  "auc": 0.8151785714285714,
+  "accuracy": 0.813953488372093,
+  "f1": 0.7794871794871796,
+  "sensitivity_tumor": 0.5510204081632653,
+  "specificity_tumor": 0.975,
+  "sensitivity_macro": 0.7630102040816327,
+  "specificity_macro": 0.7630102040816327,
+  "best_epoch": 11,
+  "checkpoint": "/home/Public/lillan/Two_Sage_RRT-/TwoStageRRT/results/stage2_he_residual_cross_v7/B/seed456/ckpt/best_model.pt",
+  "actual_optimizer_lrs": {
+    "he_projection": 0.0001,
+    "pr_projection": 0.0001,
+    "he_rrt": 0.0001,
+    "pr_rrt": 0.0001,
+    "stage2": 0.0001,
+    "abmil": 0.0001
+  },
+  "train_persistent_workers": false,
+  "initialization": "random_from_scratch",
+  "v7_variant": "B",
+  "v7_loss_he": 0.5978234786653106,
+  "v7_loss_fused": 0.5442982695495827,
+  "v7_epoch_history": [
+    {
+      "epoch": 0,
+      "val_auc": 0.48316326530612247,
+      "val_auc_he": 0.48801020408163265
+    },
+    {
+      "epoch": 1,
+      "val_auc": 0.6535714285714285,
+      "val_auc_he": 0.6456632653061225
+    },
+    {
+      "epoch": 2,
+      "val_auc": 0.6533163265306121,
+      "val_auc_he": 0.651530612244898
+    },
+    {
+      "epoch": 3,
+      "val_auc": 0.7040816326530612,
+      "val_auc_he": 0.7033163265306122
+    },
+    {
+      "epoch": 4,
+      "val_auc": 0.7595663265306123,
+      "val_auc_he": 0.7464285714285713
+    },
+    {
+      "epoch": 5,
+      "val_auc": 0.7250000000000001,
+      "val_auc_he": 0.7102040816326529
+    },
+    {
+      "epoch": 6,
+      "val_auc": 0.7385204081632654,
+      "val_auc_he": 0.713265306122449
+    },
+    {
+      "epoch": 7,
+      "val_auc": 0.7543367346938775,
+      "val_auc_he": 0.752295918367347
+    },
+    {
+      "epoch": 8,
+      "val_auc": 0.7489795918367347,
+      "val_auc_he": 0.6966836734693878
+    },
+    {
+      "epoch": 9,
+      "val_auc": 0.7614795918367347,
+      "val_auc_he": 0.7249999999999999
+    },
+    {
+      "epoch": 10,
+      "val_auc": 0.7710459183673469,
+      "val_auc_he": 0.7529336734693877
+    },
+    {
+      "epoch": 11,
+      "val_auc": 0.8151785714285714,
+      "val_auc_he": 0.7489795918367347
+    },
+    {
+      "epoch": 12,
+      "val_auc": 0.7845663265306123,
+      "val_auc_he": 0.7715561224489795
+    },
+    {
+      "epoch": 13,
+      "val_auc": 0.7344387755102041,
+      "val_auc_he": 0.7229591836734693
+    },
+    {
+      "epoch": 14,
+      "val_auc": 0.7190051020408164,
+      "val_auc_he": 0.707780612244898
+    },
+    {
+      "epoch": 15,
+      "val_auc": 0.7669642857142858,
+      "val_auc_he": 0.7655612244897959
+    },
+    {
+      "epoch": 16,
+      "val_auc": 0.7806122448979591,
+      "val_auc_he": 0.7464285714285716
+    },
+    {
+      "epoch": 17,
+      "val_auc": 0.7482142857142857,
+      "val_auc_he": 0.731887755102041
+    },
+    {
+      "epoch": 18,
+      "val_auc": 0.7382653061224489,
+      "val_auc_he": 0.7283163265306123
+    },
+    {
+      "epoch": 19,
+      "val_auc": 0.7785714285714285,
+      "val_auc_he": 0.7767857142857142
+    },
+    {
+      "epoch": 20,
+      "val_auc": 0.7451530612244899,
+      "val_auc_he": 0.7321428571428571
+    },
+    {
+      "epoch": 21,
+      "val_auc": 0.7477040816326531,
+      "val_auc_he": 0.7266581632653062
+    }
+  ],
+  "init_hash": "c915f754f9c580f6b16794136f1917c2680c9492d83409f62b01f5d54efb6be2"
+}

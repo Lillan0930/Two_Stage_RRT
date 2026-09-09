@@ -243,6 +243,20 @@ class Trainer:
         self.v6_avg_loss_he = 0.0       # 每 epoch HE CE 均值（日志）
         self.v6_avg_loss_fused = 0.0    # 每 epoch fused CE 均值（日志）
 
+        # v7 = "restore fused gradient"：L = CE(M(H),y) + CE(M(F),y)，同一 MIL 无 detach。
+        # 三个不重叠参数组各自 clip_grad_norm_(1.0)（§3）。
+        self.is_v7 = config['model'].get('stage2_type') == 'he_residual_cross_v7'
+        self.v7_fused_he_detach = bool(config['model'].get('stage2_cfg', {})
+                                        .get('v7_fused_he_detach', False))
+        self.v7_group_he_params = None      # patch_to_emb[0] / rrt_he
+        self.v7_group_mil_params = None     # mil
+        self.v7_group_pr2_params = None     # patch_to_emb[1] / rrt_ihc / cross_region_mod
+        self.v7_other_params = None         # 未覆盖参数（应为空，见覆盖校验）
+        self.v7_avg_loss_he = 0.0
+        self.v7_avg_loss_fused = 0.0
+        self.v7_epoch_history = []          # [{epoch, val_auc, val_auc_he}]
+        self.init_hash = None               # 初始权重 hash（§4，训练前计算）
+
         # ── KD: HE → PR confidence-weighted distillation ──
         self.kd_enabled = config['training'].get('kd_enabled', False)
         self.kd_lambda = config['training'].get('kd_lambda', 0.01)
@@ -655,11 +669,46 @@ class Trainer:
         lr = train_cfg['learning_rate']
         wd = train_cfg['weight_decay']
 
+        # v7：三个不重叠参数组，各自单独 clip_grad_norm_(1.0)（§3）——
+        #   HE  : patch_to_emb[0] / rrt_he
+        #   MIL : mil
+        #   PR2 : patch_to_emb[1] / rrt_ihc / cross_region_mod
+        # 三者 lr 相同（unified_lr），仅 clip 分离；任何未覆盖参数进 v7_other 组并告警。
+        if getattr(self, 'is_v7', False):
+            he_p, mil_p, pr2_p, other_p = [], [], [], []
+            other_names = []
+            for name, p in model.named_parameters():
+                if not p.requires_grad:
+                    continue
+                if name.startswith(('patch_to_emb.0.', 'rrt_he.')):
+                    he_p.append(p)
+                elif name.startswith('mil.'):
+                    mil_p.append(p)
+                elif name.startswith(('patch_to_emb.1.', 'rrt_ihc.', 'cross_region_mod.')):
+                    pr2_p.append(p)
+                else:
+                    other_p.append(p)
+                    other_names.append(name)
+            if other_p:
+                self.logger.warning(
+                    f"[v7] {len(other_p)} param(s) not covered by the three groups "
+                    f"(first: {other_names[0]}); putting them in a separate clip group")
+            self.v7_group_he_params = list(he_p)
+            self.v7_group_mil_params = list(mil_p)
+            self.v7_group_pr2_params = list(pr2_p)
+            self.v7_other_params = list(other_p)
+            params = [
+                {'params': he_p, 'lr': lr, 'name': 'v7_he_encoder'},
+                {'params': mil_p, 'lr': lr, 'name': 'v7_mil'},
+                {'params': pr2_p, 'lr': lr, 'name': 'v7_pr_stage2'},
+            ]
+            if other_p:
+                params.append({'params': other_p, 'lr': lr, 'name': 'v7_other'})
         # v6：HE CE vs fused CE 梯度分工 —— 两个参数组，各自单独 clip_grad_norm_(1.0)
         #   Group A (HE CE 更新)    : patch_to_emb[0] / rrt_he / mil
         #   Group B (fused CE 更新) : patch_to_emb[1] / rrt_ihc / cross_region_mod
         # 两者 lr 相同（unified_lr），仅 clip 分离；其余参数（不应存在）归入 B 兜底。
-        if getattr(self, 'is_v6', False):
+        elif getattr(self, 'is_v6', False):
             group_a, group_b = [], []
             for name, p in model.named_parameters():
                 if not p.requires_grad:
@@ -762,6 +811,9 @@ class Trainer:
 
     def train_epoch(self, model, train_loader, criterion, optimizer, scaler=None):
         """训练一个 epoch（支持 AMP、Modality Dropout、辅助单模态监督）"""
+        if getattr(self, 'is_v7', False):
+            return self._train_epoch_v7(
+                model, train_loader, criterion, optimizer, scaler)
         if getattr(self, 'is_v6', False):
             return self._train_epoch_v6(
                 model, train_loader, criterion, optimizer, scaler)
@@ -1038,6 +1090,107 @@ class Trainer:
             y_prob=all_probs_np
         )
 
+        return avg_loss, metrics
+
+    def _train_epoch_v7(self, model, train_loader, criterion, optimizer, scaler=None):
+        """v7 训练一个 epoch：L = CE(M(H), y) + CE(M(F), y)。
+
+        前向见 `MM_RRT_ABMIL.forward_v7`。梯度按图结构分工：
+          * HE CE  → HE encoder + MIL；
+          * fused CE → A: MIL + PR/Stage2（HE 被 detach）；B: HE + MIL + PR/Stage2。
+        backward 后对三个参数组分别 `clip_grad_norm_(max_norm=1.0)`（§3），
+        无全模型联合裁剪。主预测（metrics）取 fused logits。
+        """
+        model.train()
+        total_loss = 0.0
+        total_he_loss = 0.0
+        total_fused_loss = 0.0
+        all_preds, all_labels, all_probs = [], [], []
+
+        clip_groups = [self.v7_group_he_params, self.v7_group_mil_params,
+                       self.v7_group_pr2_params]
+        if self.v7_other_params:
+            clip_groups.append(self.v7_other_params)
+
+        pbar = tqdm(train_loader, desc=f'Training(v7{"A" if self.v7_fused_he_detach else "B"})')
+        for batch in pbar:
+            features_list_by_modality = batch['features']  # [M, B]
+            labels = batch['labels'].to(self.device, non_blocking=True)
+            batch_size = len(labels)
+            num_modalities = len(features_list_by_modality)
+
+            features_list_by_sample = []
+            for i in range(batch_size):
+                sample_features = []
+                for j in range(num_modalities):
+                    sample_features.append(features_list_by_modality[j][i])
+                features_list_by_sample.append(sample_features)
+
+            optimizer.zero_grad()
+
+            he_logits_batch, fused_logits_batch = [], []
+            if scaler is not None:
+                with autocast():
+                    for sample_features in features_list_by_sample:
+                        sf = [f.to(self.device) for f in sample_features]
+                        out = model.forward_v7(sf)
+                        he_logits_batch.append(out['he_logits'])
+                        fused_logits_batch.append(out['fused_logits'])
+                    he_logits = torch.cat(he_logits_batch, dim=0)
+                    fused_logits = torch.cat(fused_logits_batch, dim=0)
+                    loss_he = criterion(he_logits, labels)
+                    loss_fused = criterion(fused_logits, labels)
+                    loss = loss_he + loss_fused
+                scaler.scale(loss).backward()
+                scaler.unscale_(optimizer)
+                for g in clip_groups:
+                    torch.nn.utils.clip_grad_norm_(g, max_norm=1.0)
+                scaler.step(optimizer)
+                scaler.update()
+            else:
+                for sample_features in features_list_by_sample:
+                    sf = [f.to(self.device) for f in sample_features]
+                    out = model.forward_v7(sf)
+                    he_logits_batch.append(out['he_logits'])
+                    fused_logits_batch.append(out['fused_logits'])
+                he_logits = torch.cat(he_logits_batch, dim=0)
+                fused_logits = torch.cat(fused_logits_batch, dim=0)
+                loss_he = criterion(he_logits, labels)
+                loss_fused = criterion(fused_logits, labels)
+                loss = loss_he + loss_fused
+                loss.backward()
+                for g in clip_groups:
+                    torch.nn.utils.clip_grad_norm_(g, max_norm=1.0)
+                optimizer.step()
+
+            total_loss += loss.item()
+            total_he_loss += loss_he.item()
+            total_fused_loss += loss_fused.item()
+
+            with torch.no_grad():
+                probs = torch.softmax(fused_logits, dim=1)
+                preds = torch.argmax(fused_logits, dim=1)
+                all_preds.append(preds)
+                all_labels.append(labels)
+                all_probs.append(probs)
+
+            pbar.set_postfix({'loss': f'{loss.item():.4f}',
+                              'he': f'{loss_he.item():.4f}',
+                              'fused': f'{loss_fused.item():.4f}'})
+
+        avg_loss = total_loss / len(train_loader)
+        self.v7_avg_loss_he = total_he_loss / len(train_loader)
+        self.v7_avg_loss_fused = total_fused_loss / len(train_loader)
+
+        all_labels_np = torch.cat(all_labels).cpu().numpy()
+        all_preds_np = torch.cat(all_preds).cpu().numpy()
+        all_probs_np = torch.cat(all_probs).cpu().numpy()
+        del all_labels, all_preds, all_probs
+        metrics = calculate_metrics(
+            all_labels_np, all_preds_np,
+            num_classes=self.config['data']['num_classes'],
+            y_prob=all_probs_np
+        )
         return avg_loss, metrics
 
     def _train_epoch_v6(self, model, train_loader, criterion, optimizer, scaler=None):
@@ -1445,6 +1598,16 @@ class Trainer:
         # 创建模型
         model = self.create_model()
 
+        # v7：训练前记录初始权重 hash（§4，用于核对 A/B 同 seed 公共初始化一致）
+        if self.is_v7:
+            import hashlib
+            h = hashlib.sha256()
+            for n in sorted(model.state_dict().keys()):
+                h.update(n.encode('utf-8'))
+                h.update(model.state_dict()[n].cpu().numpy().tobytes())
+            self.init_hash = h.hexdigest()
+            self.logger.info(f"[v7] init hash: {self.init_hash}")
+
         # 创建优化器和调度器
         optimizer, scheduler = self.create_optimizer_scheduler(model)
 
@@ -1531,6 +1694,11 @@ class Trainer:
                     f"  v6 losses: CE_HE={self.v6_avg_loss_he:.4f} "
                     f"CE_fused={self.v6_avg_loss_fused:.4f}"
                 )
+            if self.is_v7:
+                self.logger.info(
+                    f"  v7 losses: CE_HE={self.v7_avg_loss_he:.4f} "
+                    f"CE_fused={self.v7_avg_loss_fused:.4f}"
+                )
 
             if not no_validation:
                 # 验证
@@ -1548,6 +1716,13 @@ class Trainer:
                 self.val_losses.append(val_loss)
                 self.val_accs.append(val_acc)
                 self.val_aucs.append(val_auc)
+                # v7：记录每 epoch 的 fused AUC（选模依据）与 HE 路径 AUC（§6）
+                if self.is_v7:
+                    self.v7_epoch_history.append({
+                        'epoch': int(epoch),
+                        'val_auc': float(val_auc),
+                        'val_auc_he': float(val_auc_he) if val_auc_he is not None else None,
+                    })
                 # ── Update HE reliability for KD gate ──
                 self.last_val_auc_he = val_auc_he
                 extra = ""
