@@ -1,0 +1,22 @@
+=== seed 42 ===
+  return self.fget.__get__(instance, owner)()
+  seed42: 25/129 slides done
+  seed42: 50/129 slides done
+  seed42: 75/129 slides done
+  seed42: 100/129 slides done
+  seed42: 125/129 slides done
+=== seed 123 ===
+  seed123: 25/129 slides done
+  seed123: 50/129 slides done
+  seed123: 75/129 slides done
+  seed123: 100/129 slides done
+  seed123: 125/129 slides done
+=== seed 456 ===
+  seed456: 25/129 slides done
+  seed456: 50/129 slides done
+  seed456: 75/129 slides done
+  seed456: 100/129 slides done
+  seed456: 125/129 slides done
+
+WROTE /home/Public/lillan/Two_Sage_RRT-/TwoStageRRT/results/stage2_he_residual_cross_v2/_eval/collapse_localization.json
+DONE

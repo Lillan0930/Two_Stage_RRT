@@ -1,0 +1,55 @@
+{
+  "seed": 42,
+  "n_train": 270,
+  "n_val": 129,
+  "prototype_magnitude_vpr": 7.8981614112854,
+  "prototype_magnitude_rpr": 19.233932495117188,
+  "val_vpr": {
+    "n": 129,
+    "cos_c": 0.9642669322878815,
+    "cos_delta": 0.040160508118858636,
+    "ratio_mean": 0.1825321465730667,
+    "ratio_median": 0.16355672478675842,
+    "delta_variance": 0.004474489483982325,
+    "delta_norm_mean": 1.4665650129318237,
+    "delta_effective_rank": 35.34751892089844,
+    "c_norm_mean": 8.020225524902344
+  },
+  "val_rpr": {
+    "n": 129,
+    "cos_c": 0.9765821944835574,
+    "cos_delta": 0.0414970457091812,
+    "ratio_mean": 0.14849971234798431,
+    "ratio_median": 0.13250400125980377,
+    "delta_variance": 0.017178088426589966,
+    "delta_norm_mean": 2.886615037918091,
+    "delta_effective_rank": 42.11832809448242,
+    "c_norm_mean": 19.4312744140625
+  },
+  "embed_control": {
+    "HE_X": {
+      "pairwise_cosine_mean": 0.7128999857972232,
+      "pairwise_cosine_std": 0.06391221570533938,
+      "token_variance_mean": 0.005869611658249773,
+      "effective_rank_mean": 217.31098168025645
+    },
+    "HE_E": {
+      "pairwise_cosine_mean": 0.7961818697335106,
+      "pairwise_cosine_std": 0.04691190753777051,
+      "token_variance_mean": 0.0033302590523507127,
+      "effective_rank_mean": 152.2578591339348
+    },
+    "PR_X": {
+      "pairwise_cosine_mean": 0.777034903720407,
+      "pairwise_cosine_std": 0.07092230182987326,
+      "token_variance_mean": 0.004753626755785284,
+      "effective_rank_mean": 180.21015520243682
+    },
+    "PR_E": {
+      "pairwise_cosine_mean": 0.8986280809792555,
+      "pairwise_cosine_std": 0.03691659733728789,
+      "token_variance_mean": 0.0017876800900061666,
+      "effective_rank_mean": 85.6491330168968
+    }
+  }
+}
