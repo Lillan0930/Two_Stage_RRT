@@ -234,6 +234,15 @@ class Trainer:
         # v5 必须保持 aux_loss_weight=0 以免触发旧的 per-modality 辅助头。
         self.pr_value_aux_weight = config['training'].get('pr_value_aux_weight', 0.0)
 
+        # ── v6: HE/PR+cross 训练梯度分工 ──
+        # stage2_type == 'he_residual_cross_v6' 时启用两 loss（CE(HE)+CE(fused)）
+        # + 两个参数组分别 clip_grad_norm_(1.0)。前向见 model.forward_v6。
+        self.is_v6 = config['model'].get('stage2_type') == 'he_residual_cross_v6'
+        self.v6_group_a_params = None   # HE CE 参数组（patch_to_emb[0]/rrt_he/mil）
+        self.v6_group_b_params = None   # fused CE 参数组（patch_to_emb[1]/rrt_ihc/cross）
+        self.v6_avg_loss_he = 0.0       # 每 epoch HE CE 均值（日志）
+        self.v6_avg_loss_fused = 0.0    # 每 epoch fused CE 均值（日志）
+
         # ── KD: HE → PR confidence-weighted distillation ──
         self.kd_enabled = config['training'].get('kd_enabled', False)
         self.kd_lambda = config['training'].get('kd_lambda', 0.01)
@@ -646,10 +655,31 @@ class Trainer:
         lr = train_cfg['learning_rate']
         wd = train_cfg['weight_decay']
 
+        # v6：HE CE vs fused CE 梯度分工 —— 两个参数组，各自单独 clip_grad_norm_(1.0)
+        #   Group A (HE CE 更新)    : patch_to_emb[0] / rrt_he / mil
+        #   Group B (fused CE 更新) : patch_to_emb[1] / rrt_ihc / cross_region_mod
+        # 两者 lr 相同（unified_lr），仅 clip 分离；其余参数（不应存在）归入 B 兜底。
+        if getattr(self, 'is_v6', False):
+            group_a, group_b = [], []
+            for name, p in model.named_parameters():
+                if not p.requires_grad:
+                    continue
+                if name.startswith(('patch_to_emb.0.', 'rrt_he.', 'mil.')):
+                    group_a.append(p)
+                elif name.startswith(('patch_to_emb.1.', 'rrt_ihc.', 'cross_region_mod.')):
+                    group_b.append(p)
+                else:
+                    group_b.append(p)
+            self.v6_group_a_params = list(group_a)
+            self.v6_group_b_params = list(group_b)
+            params = [
+                {'params': group_a, 'lr': lr, 'name': 'v6_he_group'},
+                {'params': group_b, 'lr': lr, 'name': 'v6_fused_group'},
+            ]
         # 差分 lr（两阶段）：Stage1 encoder vs Stage2 CR-MSA + ABMIL
-        lr_stage1 = train_cfg.get('lr_stage1', None)
-        lr_stage2 = train_cfg.get('lr_stage2', None)
-        if lr_stage1 is not None and lr_stage2 is not None:
+        elif train_cfg.get('lr_stage1', None) is not None and train_cfg.get('lr_stage2', None) is not None:
+            lr_stage1 = train_cfg['lr_stage1']
+            lr_stage2 = train_cfg['lr_stage2']
             stage1_prefixes = ('rrt_he.', 'rrt_ihc.', 'patch_to_emb.', 'rrt_encoder.')
             stage1, stage2 = [], []
             for name, p in model.named_parameters():
@@ -732,6 +762,9 @@ class Trainer:
 
     def train_epoch(self, model, train_loader, criterion, optimizer, scaler=None):
         """训练一个 epoch（支持 AMP、Modality Dropout、辅助单模态监督）"""
+        if getattr(self, 'is_v6', False):
+            return self._train_epoch_v6(
+                model, train_loader, criterion, optimizer, scaler)
         model.train()
         total_loss = 0.0
         all_preds = []
@@ -1005,6 +1038,102 @@ class Trainer:
             y_prob=all_probs_np
         )
 
+        return avg_loss, metrics
+
+    def _train_epoch_v6(self, model, train_loader, criterion, optimizer, scaler=None):
+        """v6 训练一个 epoch：L = CE(HE logits, y) + CE(fused logits, y)。
+
+        前向见 `MM_RRT_ABMIL.forward_v6`。两个 loss 共享同一 forward，梯度按图结构
+        自动分工：HE CE 只更新 Group A（patch_to_emb[0]/rrt_he/mil），fused CE 只
+        更新 Group B（patch_to_emb[1]/rrt_ihc/cross_region_mod）。backward 后对
+        两个参数组分别 `clip_grad_norm_(max_norm=1.0)`，不做全模型联合裁剪。
+        主预测（metrics）取 fused logits。
+        """
+        model.train()
+        total_loss = 0.0
+        total_he_loss = 0.0
+        total_fused_loss = 0.0
+        all_preds, all_labels, all_probs = [], [], []
+
+        pbar = tqdm(train_loader, desc='Training(v6)')
+        for batch in pbar:
+            features_list_by_modality = batch['features']  # [M, B]
+            labels = batch['labels'].to(self.device, non_blocking=True)
+            batch_size = len(labels)
+            num_modalities = len(features_list_by_modality)
+
+            features_list_by_sample = []
+            for i in range(batch_size):
+                sample_features = []
+                for j in range(num_modalities):
+                    sample_features.append(features_list_by_modality[j][i])
+                features_list_by_sample.append(sample_features)
+
+            optimizer.zero_grad()
+
+            he_logits_batch, fused_logits_batch = [], []
+            if scaler is not None:
+                with autocast():
+                    for sample_features in features_list_by_sample:
+                        sf = [f.to(self.device) for f in sample_features]
+                        out = model.forward_v6(sf)
+                        he_logits_batch.append(out['he_logits'])
+                        fused_logits_batch.append(out['fused_logits'])
+                    he_logits = torch.cat(he_logits_batch, dim=0)
+                    fused_logits = torch.cat(fused_logits_batch, dim=0)
+                    loss_he = criterion(he_logits, labels)
+                    loss_fused = criterion(fused_logits, labels)
+                    loss = loss_he + loss_fused
+                scaler.scale(loss).backward()
+                scaler.unscale_(optimizer)
+                torch.nn.utils.clip_grad_norm_(self.v6_group_a_params, max_norm=1.0)
+                torch.nn.utils.clip_grad_norm_(self.v6_group_b_params, max_norm=1.0)
+                scaler.step(optimizer)
+                scaler.update()
+            else:
+                for sample_features in features_list_by_sample:
+                    sf = [f.to(self.device) for f in sample_features]
+                    out = model.forward_v6(sf)
+                    he_logits_batch.append(out['he_logits'])
+                    fused_logits_batch.append(out['fused_logits'])
+                he_logits = torch.cat(he_logits_batch, dim=0)
+                fused_logits = torch.cat(fused_logits_batch, dim=0)
+                loss_he = criterion(he_logits, labels)
+                loss_fused = criterion(fused_logits, labels)
+                loss = loss_he + loss_fused
+                loss.backward()
+                torch.nn.utils.clip_grad_norm_(self.v6_group_a_params, max_norm=1.0)
+                torch.nn.utils.clip_grad_norm_(self.v6_group_b_params, max_norm=1.0)
+                optimizer.step()
+
+            total_loss += loss.item()
+            total_he_loss += loss_he.item()
+            total_fused_loss += loss_fused.item()
+
+            with torch.no_grad():
+                probs = torch.softmax(fused_logits, dim=1)
+                preds = torch.argmax(fused_logits, dim=1)
+                all_preds.append(preds)
+                all_labels.append(labels)
+                all_probs.append(probs)
+
+            pbar.set_postfix({'loss': f'{loss.item():.4f}',
+                              'he': f'{loss_he.item():.4f}',
+                              'fused': f'{loss_fused.item():.4f}'})
+
+        avg_loss = total_loss / len(train_loader)
+        self.v6_avg_loss_he = total_he_loss / len(train_loader)
+        self.v6_avg_loss_fused = total_fused_loss / len(train_loader)
+
+        all_labels_np = torch.cat(all_labels).cpu().numpy()
+        all_preds_np = torch.cat(all_preds).cpu().numpy()
+        all_probs_np = torch.cat(all_probs).cpu().numpy()
+        del all_labels, all_preds, all_probs
+        metrics = calculate_metrics(
+            all_labels_np, all_preds_np,
+            num_classes=self.config['data']['num_classes'],
+            y_prob=all_probs_np
+        )
         return avg_loss, metrics
 
     def validate(self, model, val_loader, criterion, return_probs=False):
@@ -1397,6 +1526,11 @@ class Trainer:
                 f"Train Loss: {train_loss:.4f}, Acc: {train_acc:.4f} "
                 f"[{t_train:.1f}s]"
             )
+            if self.is_v6:
+                self.logger.info(
+                    f"  v6 losses: CE_HE={self.v6_avg_loss_he:.4f} "
+                    f"CE_fused={self.v6_avg_loss_fused:.4f}"
+                )
 
             if not no_validation:
                 # 验证

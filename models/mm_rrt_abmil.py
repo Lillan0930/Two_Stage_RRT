@@ -360,6 +360,29 @@ class MM_RRT_ABMIL(nn.Module):
                     aux_hidden_dim=_get(stage2_cfg, 'aux_hidden_dim', 64),
                     aux_dropout=_get(stage2_cfg, 'aux_dropout', 0.1),
                 )
+            elif self.stage2_type == 'he_residual_cross_v6':
+                # v6 = v3 forward structure (HEResidualCrossCRMSAv3, no aux head),
+                # but training-time gradient division of labor: HE encoder+MIL by
+                # HE CE; PR encoder + ALL Stage2 by fused CE.  Forward is handled
+                # by `forward_v6` (training) and the normal dispatch (eval).
+                from models.he_residual_cross_crmsa_v3 import HEResidualCrossCRMSAv3
+                self.cross_region_mod = HEResidualCrossCRMSAv3(
+                    dim=mlp_dim,
+                    num_heads=_get(stage2_cfg, 'crmsa_heads', 8),
+                    region_num=_get(stage2_cfg, 'region_num', 4),
+                    crmsa_k=_get(stage2_cfg, 'crmsa_k', 3),
+                    drop_out=_get(stage2_cfg, 'drop_out', 0.1),
+                    drop_path=_get(stage2_cfg, 'drop_path', 0.0),
+                    epeg=_get(stage2_cfg, 'epeg', False),
+                    epeg_k=_get(stage2_cfg, 'epeg_k', 15),
+                    crmsa_mlp=_get(stage2_cfg, 'crmsa_mlp', False),
+                    ffn=_get(stage2_cfg, 'ffn', False),
+                    qkv_bias=_get(stage2_cfg, 'qkv_bias', True),
+                    residual_scale=_get(stage2_cfg, 'residual_scale', 0.1),
+                    disable_cross=_get(stage2_cfg, 'disable_cross', False),
+                    tau=_get(stage2_cfg, 'temperature', 0.2),
+                    prototype_momentum=_get(stage2_cfg, 'prototype_momentum', 0.99),
+                )
             elif self.stage2_type == 'concat':
                 # Ablation: no cross-staining fusion — plain concat of Stage-1 outputs.
                 self.cross_region_mod = None
@@ -376,7 +399,8 @@ class MM_RRT_ABMIL(nn.Module):
                     f"Unknown stage2_type: {self.stage2_type!r}. Valid types: "
                     f"'staining_msa', 'he_residual_cross', 'he_residual_cross_v2', "
                     f"'he_residual_cross_v3', 'he_residual_cross_v4', "
-                    f"'he_residual_cross_v5', 'concat', 'he_anchor'."
+                    f"'he_residual_cross_v5', 'he_residual_cross_v6', "
+                    f"'concat', 'he_anchor'."
                 )
             # HE encoder (official R²T, independent weights) — 结构参数可用 encoder_cfg 覆盖
             self.rrt_he = RRTEncoder(
@@ -669,6 +693,11 @@ class MM_RRT_ABMIL(nn.Module):
                 if aux is not None:
                     fusion_stats['pr_value_logits'] = aux['pr_value_logits']
                     fusion_stats['pr_value_has_valid'] = aux['pr_value_has_valid']
+            elif self.stage2_type == 'he_residual_cross_v6':
+                # Eval forward: normal fused prediction (H + α·Δ → M).  Training
+                # uses `forward_v6` for the two-loss gradient division.
+                z_final = self.cross_region_mod(z_he, z_ihc)
+                fusion_stats = {'two_stage_region': True, 'stage2': 'he_residual_cross_v6'}
             elif self.stage2_type == 'concat':
                 # Ablation: no cross-staining fusion — plain concat of Stage-1 outputs.
                 z_final = torch.cat([z_he, z_ihc], dim=1)
@@ -1031,7 +1060,72 @@ class MM_RRT_ABMIL(nn.Module):
             if return_modality_attns:
                 return logits, Y_hat, A, None  # modality_atns待实现
             return logits, Y_hat, A, fusion_stats, aux_loss
-    
+
+    def forward_v6(self, x):
+        """v6 training forward — one encoder pass, two loss heads (gradient
+        division of labor between HE and PR+cross).
+
+        Args:
+            x: list of 2 modality feature tensors (each [N, D] or [1, N, D]).
+
+        Returns dict:
+            he_logits:      M(H)  [1, C]  — gradient → HE projection + RRT + M.
+            fused_logits:   M_detached(Stage2(H.detach(), P))  [1, C]  — gradient
+                            → PR projection + RRT + ALL Stage2 (NOT M, NOT HE).
+            fused_features: fused = H + α·Δ  [1, N_HE, D]  (gradient-carrying).
+            z_he, z_pr:     raw Stage-1 outputs (diagnostics only).
+
+        The gradient split is enforced purely by the graph structure:
+          * `he_logits = M(H)` — H depends only on HE encoder, M keeps grad.
+          * `fused = Stage2(H.detach(), P)` — H is detached, so HE encoder gets
+            no gradient from the fused loss; P and Stage2 do.
+          * `fused_logits = functional_call(M, {detached params}, fused)` — M's
+            parameters are detached, so the fused loss updates PR+Stage2 only.
+        """
+        from torch.nn.utils.stateless import functional_call
+
+        if not isinstance(x, list) or len(x) != 2:
+            raise ValueError(
+                f"v6 forward_v6 expects a list of 2 modality features, got "
+                f"{type(x).__name__}")
+
+        x_list = []
+        for xi in x:
+            if len(xi.shape) == 2:
+                xi = xi.unsqueeze(0)
+            x_list.append(xi)
+
+        x_emb_list = [self.dp(self.patch_to_emb[i](xi))
+                      for i, xi in enumerate(x_list)]
+
+        z_he = self.rrt_he(x_emb_list[0])
+        z_pr = self.rrt_ihc(x_emb_list[1])
+        if len(z_he.shape) == 2:
+            z_he = z_he.unsqueeze(0)
+        if len(z_pr.shape) == 2:
+            z_pr = z_pr.unsqueeze(0)
+
+        # ── HE logits: M(H) — gradient to HE encoder + MIL ──
+        he_logits = self.mil(z_he)['logits']                    # [1, C]
+
+        # ── fused features: Stage2(H.detach(), P) = H + α·Δ — gradient to PR
+        #    encoder + ALL Stage2 only (H detached) ──
+        fused = self.cross_region_mod(z_he.detach(), z_pr)      # [1, N_HE, D]
+        if len(fused.shape) == 2:
+            fused = fused.unsqueeze(0)
+
+        # ── fused logits: same M, detached params — gradient to fused only ──
+        detached_params = {n: p.detach() for n, p in self.mil.named_parameters()}
+        fused_logits = functional_call(self.mil, detached_params, fused)['logits']
+
+        return {
+            'he_logits': he_logits,
+            'fused_logits': fused_logits,
+            'fused_features': fused,
+            'z_he': z_he,
+            'z_pr': z_pr,
+        }
+
     def get_modality_names(self):
         """获取模态名称列表"""
         return self.modality_list

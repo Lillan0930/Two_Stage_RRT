@@ -146,6 +146,10 @@ def main():
         "train_persistent_workers": train_persistent_workers,
         "initialization": initialization,
     }
+    # v6：额外记录两个 loss（末 epoch 均值），供 §7 报告梯度分工的 loss 分布。
+    if getattr(trainer, "is_v6", False):
+        result["v6_loss_he"] = float(trainer.v6_avg_loss_he)
+        result["v6_loss_fused"] = float(trainer.v6_avg_loss_fused)
     with open(out_dir / "result.json", "w") as f:
         json.dump(result, f, indent=2)
 

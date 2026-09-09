@@ -93,7 +93,7 @@ nohup /home/cxl/miniconda3/envs/rrtmil/bin/python scripts/run_stage2_v5.py \
 
 ### 5.4 判定
 
-内部 val 配对 Δ = **+0.0014 ± 0.0058**（噪声内），dev-test Δ = **−0.0367**（2/3 seed 变差）。**辅助监督未带来主预测收益**；早期 `AUC_PRval` 提升只证明辅助头学会了读 PR value 的判别信息，但没有反哺主预测（详见 §6 的 causal 分析：matched/disable/mismatch 是否仍无差异）。
+内部 val 配对 Δ = **+0.0014 ± 0.0058**（噪声内），dev-test Δ = **−0.0367**（2/3 seed 变差）。**辅助监督未带来主预测收益**；早期 `AUC_PRval` 提升只证明辅助头学会了读 PR value 的判别信息，但没有反哺主预测（详见 §6 的 causal 分析：matched/disable/mismatch 的 AUC 差是否仍很小）。
 
 ## 6. §6 评估（matched/disable/mismatch + aux 头）
 
@@ -108,7 +108,7 @@ nohup /home/cxl/miniconda3/envs/rrtmil/bin/python scripts/run_stage2_v5.py \
 | β0.1 / 123 | 0.7755 (1.217) | 0.7750 (1.215) | 0.7758 (1.217) | −7.006 / −6.995 |
 | β0.1 / 456 | 0.7668 (1.853) | 0.7653 (1.807) | 0.7644 (1.859) | 0.959 / 0.496 |
 
-**结论**：六组里 matched ≈ disable ≈ random-mismatch（AUC 差 ≤ 0.004，margin p50 与 CE 几乎逐位相同）。**PR 残差对主预测的贡献仍 ≈ 0，且 β=0.1 的辅助监督没有改变这一点。**
+**结论**：六组里 matched / disable / random-mismatch 的 **AUC 差都很小（≤ 0.004）**，即 cross 带来的 **AUC 增益很小**。但这**不能**外推为「逐样本预测几乎不变」：逐 slide 的 margin 在 matched vs mismatch 之间可有实际变化（如 β0.1/456 的 |matched−mismatch margin| 均值 0.52、最大 2.57，而 β0/42 仅 0.0037）。因此现有结果只能支持「cross 的 AUC 增益很小」，**不能**支持「PR 内容完全无关」或「逐样本预测几乎不变」。
 
 ### 6.2 aux 头 train/val AUC
 
@@ -121,12 +121,13 @@ nohup /home/cxl/miniconda3/envs/rrtmil/bin/python scripts/run_stage2_v5.py \
 | **β0.1 / 123** | **0.673** | **0.753** |
 | **β0.1 / 456** | **0.792** | **0.861** |
 
-**结论**：β=0.1 的辅助头确实把 PR value memory 训出了强判别性（val aux AUC 0.75–0.88，β=0 对照 ≈ 0.46–0.62 ≈ 随机）。但这份判别信息**没有反哺主预测**（主 val AUC 基本不变，causal 仍 matched≈mismatch≈disable）。
+**结论**：β=0.1 的辅助头确实把 PR value memory 训出了强判别性（val aux AUC 0.75–0.88，β=0 对照 ≈ 0.46–0.62 ≈ 随机）。但这份判别信息**没有反哺主预测的 AUC**（主 val AUC 基本不变，dev-test AUC 反而略降）。注意：AUC 无收益 ≠ 逐样本预测无关（见 §6.1）。
 
 ## 7. 最终判定
 
-**v5 判定 = 交叉注意力通路瓶颈（而非 PR value 表征本身）。**
+**v5 判定 = 交叉注意力通路的 AUC 增益瓶颈（而非 PR value 表征本身）。**
 
 - 直接监督可以把 PR value memory 训练到 val AUC 0.88，说明「PR value 缺判别信息」不是根因。
-- 但主预测不涨（内部 val Δ=+0.0014）、dev-test 反而略降（Δ=−0.0367）、causal 仍无差异 ⇒ **瓶颈在 cross-attention 如何把 PR value 的判别信号注入 `Z_HE + 0.1·Δ`**：残差 Δ 对 matched PR content 依旧不敏感（AUC 相同不能推断 logits/attention 不变，本节用逐 slide margin/CE 证实了确实几乎逐位不变）。
-- 与 [[c16-round10-v4-qk-common-direction]] 的结论衔接：v4 已把注意力从「均匀」修到「选择性但 slide-invariant」；v5 进一步排除了「PR value 表征不足」，把失败点收敛到**残差注入通路本身的内容无关性**。
+- 但主预测 AUC 不涨（内部 val Δ=+0.0014）、dev-test 反而略降（Δ=−0.0367）、causal 的 AUC 差 ≤ 0.004 ⇒ 瓶颈在 cross-attention 如何把 PR value 的判别信号**有效注入** `Z_HE + 0.1·Δ`：cross 带来的 AUC 增益很小。
+- **重要修正（§8）**：AUC 差小**不能**推断「逐样本预测几乎不变」或「PR 内容完全无关」。逐 slide 的 margin 在 matched vs mismatch 之间可有实际变化（β0.1/456 均值 0.52、最大 2.57）。现有结果只能支持「cross 的 AUC 增益很小」，**不能**支持「残差注入通路内容完全无关」。
+- 与 [[c16-round10-v4-qk-common-direction]] 的结论衔接：v4 已把注意力从「均匀」修到「选择性」；v5 进一步排除了「PR value 表征不足」。下一步应查 cross-attention 为何 AUC 增益小（而非继续增强 PR value 表征），同时避免再把「AUC 无收益」误读为「内容无关」。

@@ -243,7 +243,8 @@ def section_causal(device):
                              for rs in REPLACEMENT_SEEDS},
                 "matched_minus_disable_auc": matched["auc"] - disable["auc"],
                 "matched_minus_mismatch_auc_mean": float(
-                    np.mean([mismatch[str(rs)]["auc"] for rs in REPLACEMENT_SEEDS])),
+                    matched["auc"] - np.mean([mismatch[str(rs)]["auc"]
+                                              for rs in REPLACEMENT_SEEDS])),
                 "margin_pct": {
                     "matched": _percentiles(matched["margins"]),
                     "disable": _percentiles(disable["margins"]),
