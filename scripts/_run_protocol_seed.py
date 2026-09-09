@@ -157,6 +157,10 @@ def main():
         result["v7_loss_fused"] = float(trainer.v7_avg_loss_fused)
         result["v7_epoch_history"] = list(trainer.v7_epoch_history)
         result["init_hash"] = trainer.init_hash
+    # v8：记录 PR memory mode 与初始权重 hash（§5）。
+    if getattr(trainer, "is_v8", False):
+        result["pr_memory_mode"] = trainer.v8_pr_memory_mode
+        result["init_hash"] = trainer.init_hash
     with open(out_dir / "result.json", "w") as f:
         json.dump(result, f, indent=2)
 

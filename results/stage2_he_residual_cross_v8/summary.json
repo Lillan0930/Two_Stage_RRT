@@ -1,0 +1,179 @@
+{
+  "task": "stage2_he_residual_cross_v8",
+  "evaluation_protocol": "Train / Val-as-Test",
+  "protocol_note": "official test set \u5728\u8bad\u7ec3\u4e2d\u88ab\u7528\u4e8e checkpoint selection / early stopping\uff0c\u5c5e\u65e2\u5b9a val-as-test \u5f00\u53d1\u534f\u8bae\uff0c\u975e\u4e25\u683c\u610f\u4e49\u7684\u72ec\u7acb untouched test",
+  "modes": {
+    "routed": {
+      "label": "v8-routed: PR routing pooling (\u2261v3)",
+      "pr_memory_mode": "routed",
+      "per_seed_auc": {
+        "42": 0.8752551020408164,
+        "123": 0.8755102040816326,
+        "456": 0.8724489795918366
+      },
+      "mean_auc": 0.874404761904762,
+      "std_auc": 0.001386862791692218,
+      "best_epoch": {
+        "42": 16,
+        "123": 49,
+        "456": 53
+      },
+      "init_hash": {
+        "42": "768d6d5269a8550975a8a5d205c020844b495f63e536d3fc4a79cc59d32dfebe",
+        "123": "885a9af44c962f225829a6b1c4d993ce8f0475490722740812ed574b82cbecf1",
+        "456": "c915f754f9c580f6b16794136f1917c2680c9492d83409f62b01f5d54efb6be2"
+      }
+    },
+    "patch": {
+      "label": "v8-patch: K/V = all valid Z_PR patch tokens",
+      "pr_memory_mode": "patch",
+      "per_seed_auc": {
+        "42": 0.8558673469387755,
+        "123": 0.8270408163265306,
+        "456": 0.875765306122449
+      },
+      "mean_auc": 0.8528911564625851,
+      "std_auc": 0.02000270413020972,
+      "best_epoch": {
+        "42": 22,
+        "123": 3,
+        "456": 39
+      },
+      "init_hash": {
+        "42": "768d6d5269a8550975a8a5d205c020844b495f63e536d3fc4a79cc59d32dfebe",
+        "123": "885a9af44c962f225829a6b1c4d993ce8f0475490722740812ed574b82cbecf1",
+        "456": "c915f754f9c580f6b16794136f1917c2680c9492d83409f62b01f5d54efb6be2"
+      }
+    }
+  },
+  "v3_baseline": {
+    "source": "/home/Public/lillan/Two_Sage_RRT-/TwoStageRRT/results/stage2_he_residual_cross_v6/v3",
+    "per_seed_auc": {
+      "42": 0.8752551020408164,
+      "123": 0.8755102040816326,
+      "456": 0.8724489795918366
+    },
+    "mean_auc": 0.874404761904762,
+    "note": "\u540c\u671f v3\uff08v6 \u8f6e\u914d\u5bf9\u5bf9\u7167\uff09\uff0c\u590d\u7528\u4e0d\u91cd\u8bad"
+  },
+  "paired_delta_auc": {
+    "routed_minus_v3": {
+      "common_seeds": [
+        "123",
+        "42",
+        "456"
+      ],
+      "per_seed_delta": {
+        "123": 0.0,
+        "42": 0.0,
+        "456": 0.0
+      },
+      "mean_delta": 0.0,
+      "std_delta": 0.0
+    },
+    "patch_minus_v3": {
+      "common_seeds": [
+        "123",
+        "42",
+        "456"
+      ],
+      "per_seed_delta": {
+        "123": -0.048469,
+        "42": -0.019388,
+        "456": 0.003316
+      },
+      "mean_delta": -0.021513605442176842,
+      "std_delta": 0.021194802519672935
+    },
+    "patch_minus_routed": {
+      "common_seeds": [
+        "123",
+        "42",
+        "456"
+      ],
+      "per_seed_delta": {
+        "123": -0.048469,
+        "42": -0.019388,
+        "456": 0.003316
+      },
+      "mean_delta": -0.021513605442176842,
+      "std_delta": 0.021194802519672935
+    }
+  },
+  "init_hash_routed_equals_patch_per_seed": {
+    "42": true,
+    "123": true,
+    "456": true
+  },
+  "protocol": {
+    "train": 270,
+    "val_as_test": 129,
+    "monitor": "val_auc",
+    "mode": "max",
+    "patience": 10,
+    "num_epochs": 80,
+    "scheduler": "cosine",
+    "sampling": "random",
+    "train_per_epoch": true,
+    "val_as_test_per_epoch": false,
+    "batch_size": 1,
+    "num_workers": 2,
+    "max_patches": 2500,
+    "lr": 0.0001,
+    "unified_lr": true,
+    "weight_decay": 1e-05,
+    "dropout": 0.25,
+    "abmil_hidden_dim": 256,
+    "label_smoothing": 0.0,
+    "aux_loss_weight": 0.0,
+    "modality_dropout": 0.0,
+    "kd_enabled": false,
+    "model_seed": [
+      42,
+      123,
+      456
+    ],
+    "sampling_seed": [
+      42,
+      123,
+      456
+    ],
+    "training": "v3 \u6062\u590d\uff1a\u4ec5 CE(fused)\uff0c\u5168\u5c40\u68af\u5ea6\u88c1\u526a\uff0c\u65e0 detach/\u5206\u7ec4/\u8f85\u52a9 CE"
+  },
+  "structural_change": "patch \u6a21\u5f0f\uff1aroute_norm_pr\u2192attn_norm_pr \u4e4b\u95f4\u7684 routing \u52a0\u6743 pooling \u66ff\u6362\u4e3a identity\uff0cK/V = Z_PR \u5168\u90e8\u6709\u6548 patch token\uff08K=\u6709\u6548\u6570\uff0c\u7269\u7406\u538b\u7f29\uff09\uff1bphi_pr \u4fdd\u7559\u4f46\u4e0d\u53c2\u4e0e forward",
+  "stage1_encoder_cfg": {
+    "HE": {
+      "region_num": 4,
+      "epeg_k": 9,
+      "crmsa_k": 3,
+      "n_heads": 4,
+      "drop_path": 0.0
+    },
+    "PR": {
+      "region_num": 8,
+      "epeg_k": 15,
+      "crmsa_k": 5,
+      "n_heads": 8,
+      "drop_path": 0.11554210024949738
+    }
+  },
+  "stage2_cfg": {
+    "region_num": 4,
+    "crmsa_heads": 8,
+    "crmsa_k": 3,
+    "drop_out": 0.1,
+    "drop_path": 0.0,
+    "epeg": false,
+    "epeg_k": 15,
+    "crmsa_mlp": false,
+    "ffn": false,
+    "qkv_bias": false,
+    "temperature": 0.2,
+    "residual_scale": 0.1,
+    "disable_cross": false,
+    "prototype_momentum": 0.99
+  },
+  "pretrained_loaded": false,
+  "initialization": "random_from_scratch",
+  "acceptance": "patch \u5fc5\u987b\u8d85\u8fc7\u540c\u8bbe\u7f6e v3 \u7684\u4e3b\u9884\u6d4b\uff08\u4e0d\u80fd\u4ee5\u8d85\u8fc7\u5f31 v7 \u5224\u6210\u529f\uff09"
+}

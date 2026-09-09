@@ -257,6 +257,12 @@ class Trainer:
         self.v7_epoch_history = []          # [{epoch, val_auc, val_auc_he}]
         self.init_hash = None               # 初始权重 hash（§4，训练前计算）
 
+        # v8 = "HE region queries 读取 PR patch memory" 结构对照：恢复 v3 训练
+        # （单 fused CE、全局裁剪），仅 PR memory mode 不同（routed/patch）。
+        self.is_v8 = config['model'].get('stage2_type') == 'he_residual_cross_v8'
+        self.v8_pr_memory_mode = str(config['model'].get('stage2_cfg', {})
+                                      .get('pr_memory_mode', 'patch'))
+
         # ── KD: HE → PR confidence-weighted distillation ──
         self.kd_enabled = config['training'].get('kd_enabled', False)
         self.kd_lambda = config['training'].get('kd_lambda', 0.01)
@@ -1598,15 +1604,15 @@ class Trainer:
         # 创建模型
         model = self.create_model()
 
-        # v7：训练前记录初始权重 hash（§4，用于核对 A/B 同 seed 公共初始化一致）
-        if self.is_v7:
+        # v7/v8：训练前记录初始权重 hash（用于核对同 seed 公共初始化一致）
+        if self.is_v7 or self.is_v8:
             import hashlib
             h = hashlib.sha256()
             for n in sorted(model.state_dict().keys()):
                 h.update(n.encode('utf-8'))
                 h.update(model.state_dict()[n].cpu().numpy().tobytes())
             self.init_hash = h.hexdigest()
-            self.logger.info(f"[v7] init hash: {self.init_hash}")
+            self.logger.info(f"[init] hash: {self.init_hash}")
 
         # 创建优化器和调度器
         optimizer, scheduler = self.create_optimizer_scheduler(model)

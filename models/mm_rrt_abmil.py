@@ -409,6 +409,30 @@ class MM_RRT_ABMIL(nn.Module):
                     tau=_get(stage2_cfg, 'temperature', 0.2),
                     prototype_momentum=_get(stage2_cfg, 'prototype_momentum', 0.99),
                 )
+            elif self.stage2_type == 'he_residual_cross_v8':
+                # v8 = "HE region queries read PR patch memory": v3 training
+                # (single fused CE, global clip) + PR memory mode ablation.
+                #   routed → v3 behavior exactly;  patch → PR routing pooling
+                # replaced by identity, K/V over ALL valid Z_PR patch tokens.
+                from models.he_residual_cross_crmsa_v8 import HEResidualCrossCRMSAv8
+                self.cross_region_mod = HEResidualCrossCRMSAv8(
+                    dim=mlp_dim,
+                    num_heads=_get(stage2_cfg, 'crmsa_heads', 8),
+                    region_num=_get(stage2_cfg, 'region_num', 4),
+                    crmsa_k=_get(stage2_cfg, 'crmsa_k', 3),
+                    drop_out=_get(stage2_cfg, 'drop_out', 0.1),
+                    drop_path=_get(stage2_cfg, 'drop_path', 0.0),
+                    epeg=_get(stage2_cfg, 'epeg', False),
+                    epeg_k=_get(stage2_cfg, 'epeg_k', 15),
+                    crmsa_mlp=_get(stage2_cfg, 'crmsa_mlp', False),
+                    ffn=_get(stage2_cfg, 'ffn', False),
+                    qkv_bias=_get(stage2_cfg, 'qkv_bias', True),
+                    residual_scale=_get(stage2_cfg, 'residual_scale', 0.1),
+                    disable_cross=_get(stage2_cfg, 'disable_cross', False),
+                    tau=_get(stage2_cfg, 'temperature', 0.2),
+                    prototype_momentum=_get(stage2_cfg, 'prototype_momentum', 0.99),
+                    pr_memory_mode=_get(stage2_cfg, 'pr_memory_mode', 'patch'),
+                )
             elif self.stage2_type == 'concat':
                 # Ablation: no cross-staining fusion — plain concat of Stage-1 outputs.
                 self.cross_region_mod = None
@@ -426,7 +450,7 @@ class MM_RRT_ABMIL(nn.Module):
                     f"'staining_msa', 'he_residual_cross', 'he_residual_cross_v2', "
                     f"'he_residual_cross_v3', 'he_residual_cross_v4', "
                     f"'he_residual_cross_v5', 'he_residual_cross_v6', "
-                    f"'he_residual_cross_v7', "
+                    f"'he_residual_cross_v7', 'he_residual_cross_v8', "
                     f"'concat', 'he_anchor'."
                 )
             # HE encoder (official R²T, independent weights) — 结构参数可用 encoder_cfg 覆盖
@@ -734,6 +758,15 @@ class MM_RRT_ABMIL(nn.Module):
                     'two_stage_region': True,
                     'stage2': 'he_residual_cross_v7',
                     'logits_he': self.mil(z_he)['logits'],
+                }
+            elif self.stage2_type == 'he_residual_cross_v8':
+                # Eval forward == v3 (routed mode is exactly v3; patch mode
+                # differs only inside the cross module's PR memory path).
+                z_final = self.cross_region_mod(z_he, z_ihc)
+                fusion_stats = {
+                    'two_stage_region': True,
+                    'stage2': 'he_residual_cross_v8',
+                    'pr_memory_mode': self.cross_region_mod.pr_memory_mode,
                 }
             elif self.stage2_type == 'concat':
                 # Ablation: no cross-staining fusion — plain concat of Stage-1 outputs.

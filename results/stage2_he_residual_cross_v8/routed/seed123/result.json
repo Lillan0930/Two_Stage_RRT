@@ -1,0 +1,24 @@
+{
+  "seed": 123,
+  "auc": 0.8755102040816326,
+  "accuracy": 0.8604651162790697,
+  "f1": 0.8479570455735987,
+  "sensitivity_tumor": 0.7551020408163265,
+  "specificity_tumor": 0.925,
+  "sensitivity_macro": 0.8400510204081633,
+  "specificity_macro": 0.8400510204081633,
+  "best_epoch": 49,
+  "checkpoint": "/home/Public/lillan/Two_Sage_RRT-/TwoStageRRT/results/stage2_he_residual_cross_v8/routed/seed123/ckpt/best_model.pt",
+  "actual_optimizer_lrs": {
+    "he_projection": 0.0001,
+    "pr_projection": 0.0001,
+    "he_rrt": 0.0001,
+    "pr_rrt": 0.0001,
+    "stage2": 0.0001,
+    "abmil": 0.0001
+  },
+  "train_persistent_workers": false,
+  "initialization": "random_from_scratch",
+  "pr_memory_mode": "routed",
+  "init_hash": "885a9af44c962f225829a6b1c4d993ce8f0475490722740812ed574b82cbecf1"
+}
