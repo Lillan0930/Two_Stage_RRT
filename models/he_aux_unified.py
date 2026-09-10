@@ -71,6 +71,27 @@ from models.mm_rrt_encoder import RRTEncoder, initialize_weights
 HE_STAIN = 'HE'
 MODEL_FAMILY = 'he_aux_unified'
 
+#: Bumped whenever the *meaning* of a `get_config()` entry changes.  Written
+#: into every checkpoint's `model_config`; restoring refuses an unknown version
+#: rather than guessing at an older layout.
+MODEL_CONFIG_SCHEMA_VERSION = 1
+
+#: The subset of `get_config()` that `HEAuxUnifiedModel.__init__` accepts — the
+#: only keys `build_he_aux_unified_from_model_config` forwards.  Everything else
+#: in `get_config()` is derived metadata and is deliberately not replayed.
+_CONSTRUCTION_KEYS = (
+    'modality_list', 'he_stain', 'input_dim', 'mlp_dim', 'num_classes',
+    'dropout', 'act', 'encoder_cfg', 'stage2_cfg', 'mil_cfg', 'init_seed',
+    'region_num', 'n_layers', 'n_heads', 'drop_path', 'trans_dropout',
+    'epeg', 'epeg_k', 'crmsa_k', 'cr_msa', 'all_shortcut', 'crmsa_mlp',
+    'crmsa_heads',
+)
+
+#: Construction keys without which a model cannot be rebuilt (the rest fall back
+#: to the class defaults).
+_REQUIRED_CONSTRUCTION_KEYS = ('modality_list', 'input_dim', 'mlp_dim',
+                               'num_classes')
+
 #: Stage-1 encoder config used by the historical v3 runs
 #: (`scripts/run_stage2_v3.py::STAGE1_ENCODER_CFG`).  HE and PR keep these; any
 #: other stain without an explicit `encoder_cfg` entry uses the **HE** entry
@@ -111,13 +132,36 @@ def _seeded_scope(seed: int):
     Restoring (rather than merely re-seeding) is what makes module init
     order-independent: an extra auxiliary branch consumes RNG only inside its
     own scope and leaves no trace for the modules built after it.
+
+    `torch.manual_seed` seeds *every* device, so the CUDA generator has to be
+    saved/restored alongside the CPU one — otherwise constructing a submodule
+    silently shifts the CUDA stream and a later `.to(device)` / stochastic op
+    on GPU stops being reproducible.
     """
-    state = torch.get_rng_state()
+    cpu_state = torch.get_rng_state()
+    cuda_state = (torch.cuda.get_rng_state_all()
+                  if torch.cuda.is_available() else None)
     try:
         torch.manual_seed(seed)
         yield
     finally:
-        torch.set_rng_state(state)
+        torch.set_rng_state(cpu_state)
+        if cuda_state is not None:
+            torch.cuda.set_rng_state_all(cuda_state)
+
+
+def initialization_hash(model: nn.Module) -> str:
+    """Stable sha256 over a model's *current* parameters and buffers.
+
+    Called right after construction to record the initial weights, so two runs
+    claiming the same seed can be checked for identical initialisation.
+    """
+    h = hashlib.sha256()
+    sd = model.state_dict()
+    for name in sorted(sd.keys()):
+        h.update(name.encode('utf-8'))
+        h.update(sd[name].detach().cpu().numpy().tobytes())
+    return h.hexdigest()
 
 
 class HEAuxUnifiedModel(nn.Module):
@@ -380,7 +424,14 @@ class HEAuxUnifiedModel(nn.Module):
         return feats
 
     def _normalize_masks(self, valid_masks, feats):
-        """dict {stain: [B,N] bool} or None → dict with only present entries."""
+        """dict {stain: [B,N] bool} or None → dict with only present entries.
+
+        Only all-True masks (or `None`) are accepted.  Stage-1 RRT has no
+        masking, so a mask with any `False` would be honoured by the Stage-2
+        cross branch while the encoder still attended over the padding — i.e.
+        it would be *silently half-applied*.  Rather than claim end-to-end
+        mask support we refuse it loudly.
+        """
         if valid_masks is None:
             return {}
         if not isinstance(valid_masks, dict):
@@ -403,18 +454,53 @@ class HEAuxUnifiedModel(nn.Module):
                 raise ValueError(
                     f"valid mask for {stain!r} has shape {tuple(m.shape)}, "
                     f"expected {tuple(feats[stain].shape[:2])}")
+            n_invalid = int((~m).sum().item())
+            if n_invalid:
+                raise ValueError(
+                    f"valid mask for {stain!r} marks {n_invalid}/"
+                    f"{m.numel()} token(s) invalid. Stage-1 RRT does not "
+                    f"support partially-invalid bags yet, so such a mask would "
+                    f"be applied by the Stage-2 cross branch but silently "
+                    f"ignored by the encoder. Pass None (or an all-True mask) "
+                    f"until Stage-1 masking is implemented.")
             out[stain] = m
         return out
 
     # ------------------------------------------------------------------
     # core computation
     # ------------------------------------------------------------------
-    def encode_he(self, features: Dict[str, torch.Tensor]) -> torch.Tensor:
-        """H = he_encoder(proj_HE(x_HE)) — computed once per forward."""
+    def encode(self, features: Dict[str, torch.Tensor]):
+        """Stage-1 for every stain, evaluated exactly once per forward.
+
+        Returns `(projected, encoded)`: `projected[m]` is the post-projection,
+        post-dropout patch embedding and `encoded[m]` the Stage-1 RRT output.
+
+        Anything that wants the intermediate representations (`return_features`)
+        reads them back from here instead of re-running the projection: in train
+        mode a second call would draw a *fresh* dropout mask and report tensors
+        the forward never actually used.
+        """
+        projected = {m: self.dp(self.patch_to_emb[m](features[m]))
+                     for m in self.stain_order}
+        encoded = {m: self._as_3d(self.rrt[m](projected[m]))
+                   for m in self.stain_order}
+        return projected, encoded
+
+    def encode_he(self, features: Dict[str, torch.Tensor],
+                  encoded: Optional[Dict[str, torch.Tensor]] = None
+                  ) -> torch.Tensor:
+        """H = he_encoder(proj_HE(x_HE)) — computed once per forward.
+
+        Pass `encoded` (from `encode`) to reuse an already-computed Stage-1
+        result rather than running the HE branch a second time.
+        """
+        if encoded is not None:
+            return encoded[self.he_stain]
         he_emb = self.dp(self.patch_to_emb[self.he_stain](features[self.he_stain]))
         return self._as_3d(self.rrt[self.he_stain](he_emb))
 
-    def fuse(self, features: Dict[str, torch.Tensor], valid=None):
+    def fuse(self, features: Dict[str, torch.Tensor], valid=None,
+             encoded: Optional[Dict[str, torch.Tensor]] = None):
         """Fuse HE with every auxiliary stain.
 
         Returns:
@@ -422,9 +508,14 @@ class HEAuxUnifiedModel(nn.Module):
             auxiliary stain, else `mean_m branch_m(H, Z_m)`; each
             `branch_m(H, Z_m) = H + residual_scale · Δ_m` already contains the
             HE residual.
+
+        `encoded` may carry the Stage-1 results from `encode()` so a caller that
+        already ran Stage-1 does not run it twice.
         """
         valid = valid or {}
-        H = self.encode_he(features)                       # [B, N_HE, D] — once
+        if encoded is None:
+            _, encoded = self.encode(features)
+        H = encoded[self.he_stain]                         # [B, N_HE, D] — once
 
         if not self.aux_stains:
             return H, H, {}
@@ -432,12 +523,10 @@ class HEAuxUnifiedModel(nn.Module):
         vh = valid.get(self.he_stain)
         branch_outputs = {}
         for stain in self.aux_stains:
-            emb = self.dp(self.patch_to_emb[stain](features[stain]))
-            z_m = self._as_3d(self.rrt[stain](emb))
             # Every branch reads the SAME H object: branches are parallel and
             # never mutate the HE representation.
             branch_outputs[stain] = self.cross_branches[stain](
-                H, z_m, valid_he=vh, valid_pr=valid.get(stain))
+                H, encoded[stain], valid_he=vh, valid_pr=valid.get(stain))
 
         stacked = torch.stack([branch_outputs[s] for s in self.aux_stains], dim=0)
         # Mean of complete branch outputs (each = H + s·Δ_m) ⇒ H + (s/M)·Σ Δ_m.
@@ -464,7 +553,10 @@ class HEAuxUnifiedModel(nn.Module):
         feats = self._normalize_inputs(x, modality_names=modality_names)
         valid = self._normalize_masks(valid_masks, feats)
 
-        fused, H, branch_outputs = self.fuse(feats, valid)
+        # Stage 1 runs exactly once; the fused output and every `return_features`
+        # entry are read off these tensors.
+        projected, encoded = self.encode(feats)
+        fused, H, branch_outputs = self.fuse(feats, valid, encoded=encoded)
         vh = valid.get(self.he_stain)
 
         # tokens + validity mask → pluggable MIL head
@@ -493,8 +585,9 @@ class HEAuxUnifiedModel(nn.Module):
                 'prediction': Y_hat,
                 'attention': attention,
                 'fused_features': fused,
-                'embedded_features': [self.dp(self.patch_to_emb[m](feats[m]))
-                                      for m in self.stain_order],
+                # cached Stage-1 tensors from THIS forward — never recomputed
+                'embedded_features': [projected[m] for m in self.stain_order],
+                'encoded_features': [encoded[m] for m in self.stain_order],
                 'fusion_stats': fusion_stats,
             }
         return logits, Y_hat, attention, fusion_stats, torch.tensor(
@@ -504,23 +597,45 @@ class HEAuxUnifiedModel(nn.Module):
     # config / checkpoint metadata
     # ------------------------------------------------------------------
     def get_config(self) -> dict:
-        """Full construction config — stored in every checkpoint."""
+        """Full construction config — stored in every checkpoint.
+
+        Contains every argument `HEAuxUnifiedModel.__init__` accepts (see
+        `_CONSTRUCTION_KEYS`), so `build_he_aux_unified_from_model_config` can
+        rebuild the model from a checkpoint alone.  The remaining entries
+        (`*_resolved`, `*_source`, `fusion`) are derived metadata, recorded so a
+        restored run can be audited without re-deriving them.
+        """
         return {
+            'config_schema_version': MODEL_CONFIG_SCHEMA_VERSION,
             'model_family': MODEL_FAMILY,
+            # ── construction arguments ─────────────────────────────────────
             'modality_list': list(self.stain_order),
             'he_stain': self.he_stain,
-            'aux_stains': list(self.aux_stains),
             'input_dim': self.input_dim,
             'mlp_dim': self.mlp_dim,
             'num_classes': self.num_classes,
             'dropout': self.dropout,
             'act': self.act,
             'encoder_cfg': copy.deepcopy(self.encoder_cfg),
-            'encoder_cfg_resolved': copy.deepcopy(self.encoder_cfg_resolved),
-            'encoder_cfg_source': dict(self.encoder_cfg_source),
             'stage2_cfg': copy.deepcopy(self.stage2_cfg),
             'mil_cfg': copy.deepcopy(self.mil_cfg),
             'init_seed': self.init_seed,
+            'region_num': self.region_num,
+            'n_layers': self.n_layers,
+            'n_heads': self.n_heads,
+            'drop_path': self.drop_path,
+            'trans_dropout': self.trans_dropout,
+            'epeg': self.epeg,
+            'epeg_k': self.epeg_k,
+            'crmsa_k': self.crmsa_k,
+            'cr_msa': self.cr_msa,
+            'all_shortcut': self.all_shortcut,
+            'crmsa_mlp': self.crmsa_mlp,
+            'crmsa_heads': self.crmsa_heads,
+            # ── derived metadata ───────────────────────────────────────────
+            'aux_stains': list(self.aux_stains),
+            'encoder_cfg_resolved': copy.deepcopy(self.encoder_cfg_resolved),
+            'encoder_cfg_source': dict(self.encoder_cfg_source),
             'fusion': {
                 'formula': 'H + (residual_scale / M) * sum_m delta_m',
                 'residual_scale': float(self.stage2_cfg.get('residual_scale', 0.1)),
@@ -609,6 +724,50 @@ def build_he_aux_unified_from_config(model_cfg: dict, data_cfg: dict,
             cfg[key] = model_cfg[key]
     cfg.update(overrides)
     return build_he_aux_unified(**cfg)
+
+
+def build_he_aux_unified_from_model_config(model_config: dict,
+                                           **overrides) -> HEAuxUnifiedModel:
+    """Rebuild the model from a checkpoint's `model_config` **alone**.
+
+    This is the supported restore path: no training config, no `data` block, no
+    command-line flags.  The stored `config_schema_version` is checked first, so
+    an unknown/older layout fails loudly instead of being reinterpreted under
+    today's key meanings.
+
+    Pair it with `load_state_dict(ckpt['model_state_dict'], strict=True)` — the
+    point of rebuilding from the same dict the model wrote is that `strict=True`
+    can then be used without surprises.
+    """
+    if not isinstance(model_config, dict):
+        raise TypeError(
+            f"model_config must be a dict, got {type(model_config).__name__}")
+
+    version = model_config.get('config_schema_version')
+    if version is None:
+        raise ValueError(
+            "checkpoint 'model_config' has no 'config_schema_version' — it "
+            "predates schema versioning and cannot be restored automatically. "
+            f"Re-export it with a model that writes version "
+            f"{MODEL_CONFIG_SCHEMA_VERSION}.")
+    if version != MODEL_CONFIG_SCHEMA_VERSION:
+        raise ValueError(
+            f"unsupported model_config schema version {version!r}; this build "
+            f"understands version {MODEL_CONFIG_SCHEMA_VERSION} only.")
+
+    family = model_config.get('model_family')
+    if family is not None and family != MODEL_FAMILY:
+        raise ValueError(
+            f"model_config is for model_family {family!r}, not {MODEL_FAMILY!r}")
+
+    kwargs = {k: copy.deepcopy(model_config[k])
+              for k in _CONSTRUCTION_KEYS if k in model_config}
+    missing = [k for k in _REQUIRED_CONSTRUCTION_KEYS if k not in kwargs]
+    if missing:
+        raise ValueError(
+            f"model_config is missing required construction key(s) {missing}")
+    kwargs.update(overrides)
+    return build_he_aux_unified(**kwargs)
 
 
 # ---------------------------------------------------------------------------

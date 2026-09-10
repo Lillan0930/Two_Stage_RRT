@@ -149,6 +149,92 @@ def load_config(config_path):
     return config
 
 
+#: repo root — every auto-derived output path is anchored here, so a run
+#: started from any cwd lands in the same place.
+REPO_ROOT = Path(__file__).resolve().parent
+
+
+def modality_slug(modalities):
+    """`['HE','PR']` → `'he_pr'` — a deterministic name for a stain combination."""
+    return '_'.join(str(m).lower() for m in modalities)
+
+
+def resolve_seeds(config):
+    """Resolve the three seeds and write them back into `config`.
+
+        run_seed        = environment.seed
+        model_init_seed = model.init_seed   if given, else run_seed
+        sampling_seed   = data.sample_seed  if given, else run_seed
+
+    Returns `(run_seed, model_init_seed, sampling_seed)`.  The resolved values
+    are stored in `config['resolved_seeds']` so the checkpoint records what a
+    run actually used rather than what it was asked for.
+    """
+    env_cfg = config.setdefault('environment', {})
+    model_cfg = config.setdefault('model', {})
+    data_cfg = config.setdefault('data', {})
+
+    run_seed = int(env_cfg.get('seed', 42))
+    explicit_init = model_cfg.get('init_seed')
+    explicit_sampling = data_cfg.get('sample_seed')
+    model_init_seed = run_seed if explicit_init is None else int(explicit_init)
+    sampling_seed = run_seed if explicit_sampling is None else int(explicit_sampling)
+
+    # Write the resolved values back to their canonical keys so every downstream
+    # reader (dataloader sampling, model init) uses them without further change.
+    env_cfg['seed'] = run_seed
+    model_cfg['init_seed'] = model_init_seed
+    data_cfg['sample_seed'] = sampling_seed
+
+    config['resolved_seeds'] = {
+        'run_seed': run_seed,
+        'model_init_seed': model_init_seed,
+        'model_init_seed_source': 'explicit' if explicit_init is not None else 'run_seed',
+        'sampling_seed': sampling_seed,
+        'sampling_seed_source': ('explicit' if explicit_sampling is not None
+                                 else 'run_seed'),
+    }
+    return run_seed, model_init_seed, sampling_seed
+
+
+def resolve_output_dirs(config):
+    """Fill in any empty `output.*` entry with a deterministic results path.
+
+        results/<model_family>/<combination>/seed<run_seed>/{,logs,img}
+
+    Only *empty* values are replaced — a config that names its own directories
+    keeps them exactly as written.  (An empty `save_dir` previously reached
+    `os.makedirs('')` and crashed, so every path this fills was already broken.)
+    """
+    output_cfg = config.setdefault('output', {})
+    if not isinstance(output_cfg, dict):
+        raise TypeError(
+            f"config 'output' must be a mapping, got {type(output_cfg).__name__}")
+
+    if all(output_cfg.get(k) for k in ('save_dir', 'log_dir', 'img_dir')):
+        return output_cfg
+
+    family = str(config.get('model', {}).get('stage2_type') or 'default')
+    modalities = config.get('data', {}).get('modalities') or []
+    run_seed = config.get('resolved_seeds', {}).get(
+        'run_seed', config.get('environment', {}).get('seed', 42))
+
+    root = REPO_ROOT / 'results' / family
+    if modalities:
+        root = root / modality_slug(modalities)
+    root = root / f'seed{run_seed}'
+
+    defaults = {
+        'save_dir': root,
+        'log_dir': root / 'logs',
+        'img_dir': root / 'img',
+    }
+    for key, path in defaults.items():
+        if not output_cfg.get(key):
+            output_cfg[key] = str(path)
+    return output_cfg
+
+
 def build_feature_dirs(feature_base_dir, modalities, dir_mapping=None):
     """
     根据特征根目录和模态列表构建 feature_dirs 字典。
@@ -730,6 +816,58 @@ class Trainer:
 
         return model
 
+    def _run_metadata(self, model):
+        """Checkpoint 里记录的运行元数据。
+
+        - `resolved_seeds`：实际使用的 run / model_init / sampling 三个种子
+          （以及它们来自显式配置还是继承 run_seed）
+        - `init_hash`：初始权重 hash，用于核对同 seed 的可复现性
+        - `model_config`：模型完整结构配置（仅有 get_config 的模型；旧模型不写入，
+          以免改变历史 checkpoint 的键集合）
+        """
+        meta = {
+            'resolved_seeds': self.config.get('resolved_seeds'),
+            'init_hash': self.init_hash,
+        }
+        if hasattr(model, 'get_config'):
+            meta['model_config'] = model.get_config()
+        return meta
+
+    def verify_optimizer_coverage(self, model, optimizer):
+        """核对每个可训练参数在优化器里恰好出现一次。
+
+        这两类错误都不会自己抛异常，只会安静地把结果做坏：
+          - 没被覆盖 → 该参数永远不更新（等于被冻结）
+          - 重复出现 → 该参数实际学习率翻倍
+        所以这里显式检查，并且直接抛错而不是打印告警。
+        """
+        trainable = {n: p for n, p in model.named_parameters() if p.requires_grad}
+
+        seen, dupes = {}, []
+        for gi, group in enumerate(optimizer.param_groups):
+            for p in group['params']:
+                if id(p) in seen:
+                    dupes.append(f"group{seen[id(p)]}/group{gi}")
+                seen[id(p)] = gi
+
+        missing = sorted(n for n, p in trainable.items() if id(p) not in seen)
+        problems = []
+        if missing:
+            problems.append(
+                f"{len(missing)} trainable param(s) absent from the optimizer "
+                f"(they would never update): {missing[:5]}")
+        if dupes:
+            problems.append(
+                f"{len(dupes)} param(s) appear in more than one optimizer slot "
+                f"(learning rate would be multiplied): {dupes[:5]}")
+        if problems:
+            raise RuntimeError("optimizer coverage check failed — "
+                               + '; '.join(problems))
+
+        self.logger.info(
+            f"Optimizer coverage: {len(trainable)} trainable tensors, "
+            f"{len(seen)} distinct entries in the optimizer, no duplicates")
+
     def create_optimizer_scheduler(self, model):
         """创建优化器和学习率调度器"""
         train_cfg = self.config['training']
@@ -855,6 +993,11 @@ class Trainer:
             params = param_groups
 
         optimizer = optim.Adam(params, lr=lr, weight_decay=wd)
+
+        # 优化器创建后核对：每个 requires_grad 的参数都恰好出现一次。
+        # 漏掉参数会静默不训练，重复参数会让该参数实际 lr 翻倍 —— 两者都不报错，
+        # 所以这里显式检查（覆盖不足直接抛错，重复直接抛错）。
+        self.verify_optimizer_coverage(model, optimizer)
 
         scheduler_cfg = train_cfg.get('scheduler', {})
         if scheduler_cfg.get('type') == 'plateau':
@@ -1677,15 +1820,11 @@ class Trainer:
         # 创建模型
         model = self.create_model()
 
-        # v7/v8：训练前记录初始权重 hash（用于核对同 seed 公共初始化一致）
-        if self.is_v7 or self.is_v8:
-            import hashlib
-            h = hashlib.sha256()
-            for n in sorted(model.state_dict().keys()):
-                h.update(n.encode('utf-8'))
-                h.update(model.state_dict()[n].cpu().numpy().tobytes())
-            self.init_hash = h.hexdigest()
-            self.logger.info(f"[init] hash: {self.init_hash}")
+        # 训练前记录初始权重 hash：同一 seed 的两次运行应当得到相同 hash，
+        # 也用来核对"增删辅助分支不会改变 HE/MIL 初始权重"。
+        from models.he_aux_unified import initialization_hash
+        self.init_hash = initialization_hash(model)
+        self.logger.info(f"[init] hash: {self.init_hash}")
 
         # 创建优化器和调度器
         optimizer, scheduler = self.create_optimizer_scheduler(model)
@@ -1874,8 +2013,7 @@ class Trainer:
                         'aux_classifiers_state': self.aux_classifiers.state_dict() if self.aux_classifiers is not None else None,
                         # 统一模型(he_aux_unified)的完整结构配置：模态列表 / encoder cfg
                         # / 融合配置 / MIL 名称与参数。旧模型无 get_config → 不写入该键。
-                        **({'model_config': model.get_config()}
-                           if hasattr(model, 'get_config') else {}),
+                        **self._run_metadata(model),
                     }
                     torch.save(checkpoint, save_path)
                     self.logger.info(
@@ -1914,8 +2052,7 @@ class Trainer:
                     'modalities': self.modalities,
                     'num_modalities': self.num_modalities,
                     'aux_classifiers_state': self.aux_classifiers.state_dict() if self.aux_classifiers is not None else None,
-                    **({'model_config': model.get_config()}
-                       if hasattr(model, 'get_config') else {}),
+                    **self._run_metadata(model),
                 }, save_path)
                 if optuna_trial is not None:
                     optuna_trial.report(0.0, epoch)
@@ -2029,12 +2166,26 @@ def main():
     # 加载配置
     config = load_config(args.config)
 
+    # 先解析种子与输出目录：两者都可能来自配置里的缺省值，且后续所有步骤
+    # （采样、初始化、日志、checkpoint）都读解析后的结果。
+    run_seed, model_init_seed, sampling_seed = resolve_seeds(config)
+    resolve_output_dirs(config)
+
     # 设置日志
     logger, timestamp = setup_logging(
         config['output']['log_dir'], args.exp_name
     )
     logger.info(f"Configuration: {config}")
     logger.info(f"Modalities: {config['data']['modalities']}")
+    logger.info(
+        f"Resolved seeds: run={run_seed}, "
+        f"model_init={model_init_seed} "
+        f"({config['resolved_seeds']['model_init_seed_source']}), "
+        f"sampling={sampling_seed} "
+        f"({config['resolved_seeds']['sampling_seed_source']})")
+    logger.info(
+        f"Output dirs: save={config['output']['save_dir']}, "
+        f"log={config['output']['log_dir']}, img={config['output']['img_dir']}")
 
     # 创建训练器并训练
     trainer = Trainer(config, logger, timestamp)

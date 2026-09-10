@@ -16,19 +16,31 @@
            full training step; the main model never touches ABMIL internals
   Test 6 — config & restore: stain name mapping, missing/mismatched input errors,
            token masks, checkpoint save/reload, v3 mapping completeness checks
+  Test 7 — model_config-only restore: `config_schema_version` round-trip, rebuild
+           from the checkpoint's own config with strict=True, reproducible init
+           hash, aux-count-independent initialisation
+  Test 8 — feature caching & mask policy: `return_features` returns the tensors
+           the forward actually used, all-True/None masks accepted, any-False
+           mask refused
+  Test 9 — seeds & output dirs: explicit-vs-inherited seed resolution, empty
+           output dirs resolving under the repo root, optimizer coverage check
 
 Run:  python tests/test_he_aux_unified.py
+      python tests/test_he_aux_unified.py --v3-ckpt /path/to/best_model.pt --device cuda:2
+
+Paths are resolved from this file's location (repo root), never hardcoded — the
+v3 checkpoint used by Test 1 is a CLI argument and Test 1 skips with an explicit
+message when it is absent.
 """
-import os, sys, copy, math
+import os, sys, copy, math, shutil, tempfile, argparse
 from pathlib import Path
 
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-PROJECT = Path("/home/Public/lillan/Two_Sage_RRT-/TwoStageRRT")
+PROJECT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(PROJECT))
-os.chdir(str(PROJECT))
 
 from models.he_aux_unified import (
     HEAuxUnifiedModel, build_he_aux_unified, build_he_aux_unified_from_config,
@@ -40,8 +52,10 @@ from models.mil_heads import (
 )
 from models.mil_registry import register_mil
 
-V3_CKPT = (PROJECT / "results" / "stage2_he_residual_cross_v3"
-           / "he_residual_cross_v3" / "seed42" / "ckpt" / "best_model.pt")
+DEFAULT_V3_CKPT = (PROJECT / "results" / "stage2_he_residual_cross_v3"
+                   / "he_residual_cross_v3" / "seed42" / "ckpt" / "best_model.pt")
+#: overridable via `--v3-ckpt`; Test 1 skips (it does not fail) when missing
+V3_CKPT = DEFAULT_V3_CKPT
 
 INPUT_DIM = 768
 MLP_DIM = 512
@@ -755,8 +769,236 @@ def test6_config_and_restore():
 
 
 # ---------------------------------------------------------------------------
-def main():
+def test7_model_config_restore():
+    """Test 7 — restore from the checkpoint's own `model_config` + init hash.
+
+    * `get_config()` carries every construction argument and a schema version
+    * a model can be rebuilt from `model_config` ALONE (no data block, no
+      training config) and loaded with `strict=True`
+    * the same config + init_seed reproduces the identical initial weights, and
+      adding auxiliary branches does not shift HE/MIL initialisation
+    * an unknown / missing `config_schema_version` is refused, not guessed at
+    """
+    from models.he_aux_unified import (
+        build_he_aux_unified_from_model_config, initialization_hash,
+        MODEL_CONFIG_SCHEMA_VERSION, _CONSTRUCTION_KEYS,
+    )
+
+    m = build_he_aux_unified(
+        modality_list=['HE', 'ER', 'PR'], init_seed=11, **SMALL)
+    cfg = m.get_config()
+
+    assert cfg['config_schema_version'] == MODEL_CONFIG_SCHEMA_VERSION
+    missing_keys = [k for k in _CONSTRUCTION_KEYS if k not in cfg]
+    assert not missing_keys, f"get_config() omits construction keys {missing_keys}"
+
+    # rebuild from model_config alone, strict load
+    m2 = build_he_aux_unified_from_model_config(cfg)
+    m2.load_state_dict(m.state_dict(), strict=True)
+    assert initialization_hash(m) == initialization_hash(m2), \
+        "same model_config + init_seed must reproduce identical init weights"
+
+    # a second independent build is bit-identical too (hash is meaningful)
+    m3 = build_he_aux_unified_from_model_config(cfg)
+    assert initialization_hash(m3) == initialization_hash(m), "init not reproducible"
+
+    # init must not depend on the number of auxiliary branches
+    base = dict(SMALL, init_seed=11)
+    a = build_he_aux_unified(modality_list=['HE'], **base)
+    b = build_he_aux_unified(
+        modality_list=['HE', 'ER', 'PR', 'HER2', 'Ki67'], **base)
+    pa, pb = dict(a.named_parameters()), dict(b.named_parameters())
+    shared = [k for k in pa if k in pb]
+    assert shared, "no shared parameter names between HE-only and HE+4aux"
+    bad = [k for k in shared if not torch.equal(pa[k], pb[k])]
+    assert not bad, f"adding aux branches changed shared init weights: {bad[:3]}"
+
+    # schema version is enforced
+    for bad_cfg, why in (
+            ({k: v for k, v in cfg.items() if k != 'config_schema_version'},
+             'missing'),
+            (dict(cfg, config_schema_version=99), 'unknown')):
+        try:
+            build_he_aux_unified_from_model_config(bad_cfg)
+            raise AssertionError(f"{why} config_schema_version must be refused")
+        except ValueError:
+            pass
+    try:
+        build_he_aux_unified_from_model_config(dict(cfg, model_family='other'))
+        raise AssertionError("foreign model_family must be refused")
+    except ValueError:
+        pass
+
+    # round-trip through a real checkpoint on disk
+    tmp = tempfile.mkdtemp()
+    try:
+        path = os.path.join(tmp, 'ckpt.pt')
+        torch.save({'model_state_dict': m.state_dict(),
+                    'model_config': cfg,
+                    'resolved_seeds': {'run_seed': 11},
+                    'init_hash': initialization_hash(m)}, path)
+        ck = torch.load(path, map_location='cpu', weights_only=False)
+        r = build_he_aux_unified_from_model_config(ck['model_config'])
+        r.load_state_dict(ck['model_state_dict'], strict=True)
+        assert initialization_hash(r) == ck['init_hash']
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+
+    return (f"config_schema_version={MODEL_CONFIG_SCHEMA_VERSION}; rebuilt from "
+            f"model_config alone + strict=True; init hash reproducible; "
+            f"{len(shared)} shared tensors identical across aux counts; "
+            f"missing/unknown version refused")
+
+
+# ---------------------------------------------------------------------------
+def test8_feature_cache_and_masks():
+    """Test 8 — `return_features` reuses the forward's own Stage-1 tensors.
+
+    In train mode dropout would draw a *fresh* mask on a second projection call,
+    so the reported features would not be the ones the forward used.  The check
+    is exact: re-running the Stage-1 RRT on the returned `embedded_features`
+    must reproduce the returned `encoded_features`.
+    """
+    m = build_he_aux_unified(modality_list=['HE', 'PR'], init_seed=5, **SMALL)
+    m.train()
+    x = _small_inputs(['HE', 'PR'])
+    out = m(x, return_features=True)
+
+    emb = out['embedded_features']
+    enc = out['encoded_features']
+    assert len(emb) == 2 and len(enc) == 2
+    for i, stain in enumerate(m.stain_order):
+        recomputed = m._as_3d(m.rrt[stain](emb[i]))
+        assert torch.equal(recomputed, enc[i]), (
+            f"{stain}: encoded_features is not the RRT of the returned "
+            f"embedded_features — Stage-1 was recomputed (fresh dropout)")
+
+    # and the returned HE embedding must be the one the fusion actually used
+    _, H, _ = m.fuse(x, encoded={'HE': enc[0], 'PR': enc[1]})
+    assert torch.equal(H, enc[0])
+
+    # ── mask policy: all-True / None are fine, any False raises ──
+    n_he = x['HE'].shape[1]
+    m(x, valid_masks={'HE': torch.ones(1, n_he, dtype=torch.bool)})
+    m(x, valid_masks=None)
+
+    partial = torch.ones(1, n_he, dtype=torch.bool)
+    partial[0, 3] = False
+    try:
+        m(x, valid_masks={'HE': partial})
+        raise AssertionError("a mask containing False must be refused")
+    except ValueError as e:
+        assert 'Stage-1' in str(e), str(e)
+    # the same refusal applies to an auxiliary stain's mask
+    n_pr = x['PR'].shape[1]
+    p_pr = torch.ones(1, n_pr, dtype=torch.bool)
+    p_pr[0, 0] = False
+    try:
+        m(x, valid_masks={'PR': p_pr})
+        raise AssertionError("partial aux mask must be refused")
+    except ValueError as e:
+        assert 'Stage-1' in str(e), str(e)
+
+    return ("encoded_features == rrt(embedded_features) exactly (no dropout "
+            "recompute); all-True/None masks accepted; any-False mask refused "
+            "for both HE and aux stains")
+
+
+# ---------------------------------------------------------------------------
+def test9_seed_and_output_resolution():
+    """Test 9 — run/model_init/sampling seed resolution and output dirs."""
+    import train as T
+
+    # explicit values win; all three are recorded with their provenance
+    cfg = {
+        'environment': {'seed': 7},
+        'model': {'stage2_type': 'he_aux_unified', 'init_seed': 21},
+        'data': {'modalities': ['HE', 'ER', 'PR'], 'sample_seed': 33},
+        'output': {'save_dir': '', 'log_dir': '', 'img_dir': ''},
+    }
+    run, init, samp = T.resolve_seeds(cfg)
+    assert (run, init, samp) == (7, 21, 33), (run, init, samp)
+    rs = cfg['resolved_seeds']
+    assert rs['model_init_seed_source'] == 'explicit'
+    assert rs['sampling_seed_source'] == 'explicit'
+    # written back so every downstream reader sees the resolved value
+    assert cfg['model']['init_seed'] == 21 and cfg['data']['sample_seed'] == 33
+
+    # absent values inherit run_seed
+    cfg2 = {
+        'environment': {'seed': 7},
+        'model': {'stage2_type': 'he_aux_unified'},
+        'data': {'modalities': ['HE']},
+        'output': {},
+    }
+    run2, init2, samp2 = T.resolve_seeds(cfg2)
+    assert (run2, init2, samp2) == (7, 7, 7), (run2, init2, samp2)
+    assert cfg2['resolved_seeds']['model_init_seed_source'] == 'run_seed'
+    assert cfg2['resolved_seeds']['sampling_seed_source'] == 'run_seed'
+
+    # empty output dirs resolve under the repo root, keyed by family/combination/seed
+    out = T.resolve_output_dirs(cfg)
+    assert T.modality_slug(['HE', 'ER', 'PR']) == 'he_er_pr'
+    expected = T.REPO_ROOT / 'results' / 'he_aux_unified' / 'he_er_pr' / 'seed7'
+    assert Path(out['save_dir']) == expected, out['save_dir']
+    assert Path(out['log_dir']) == expected / 'logs'
+    assert Path(out['img_dir']) == expected / 'img'
+
+    # an explicitly configured directory is left exactly as written
+    cfg3 = {'environment': {'seed': 1}, 'model': {}, 'data': {},
+            'output': {'save_dir': '/tmp/explicit', 'log_dir': '/tmp/explicit/l',
+                       'img_dir': '/tmp/explicit/i'}}
+    out3 = T.resolve_output_dirs(cfg3)
+    assert out3['save_dir'] == '/tmp/explicit', out3['save_dir']
+
+    # optimizer coverage check: missing and duplicated params both raise
+    model = build_he_aux_unified(modality_list=['HE', 'PR'], init_seed=3, **SMALL)
+    params = [p for p in model.parameters() if p.requires_grad]
+
+    class _Rec:
+        def __init__(self, logger): self.logger = logger
+    rec = _Rec(T.logging.getLogger('test9'))
+    T.Trainer.verify_optimizer_coverage(rec, model,
+                                        torch.optim.Adam(params, lr=1e-4))
+    try:                       # one parameter dropped → must raise
+        T.Trainer.verify_optimizer_coverage(
+            rec, model, torch.optim.Adam(params[1:], lr=1e-4))
+        raise AssertionError("an uncovered trainable param must raise")
+    except RuntimeError as e:
+        assert 'never update' in str(e), str(e)
+    try:                       # one parameter listed twice → must raise
+        # `Adam([...])` itself refuses a param in two groups, so build a valid
+        # optimizer and duplicate the entry afterwards (what a hand-edited
+        # `param_groups`, or an appended group, would produce).
+        dup = torch.optim.Adam(params, lr=1e-4)
+        dup.param_groups[0]['params'] = (list(dup.param_groups[0]['params'])
+                                         + [params[0]])
+        T.Trainer.verify_optimizer_coverage(rec, model, dup)
+        raise AssertionError("a duplicated param must raise")
+    except RuntimeError as e:
+        assert 'more than one' in str(e), str(e)
+
+    return ("explicit seeds win / absent inherit run_seed; empty output dirs → "
+            "results/he_aux_unified/he_er_pr/seed7/{,logs,img}; explicit dirs "
+            "untouched; optimizer coverage catches missing + duplicated params")
+
+
+# ---------------------------------------------------------------------------
+def main(argv=None):
+    global V3_CKPT
+    ap = argparse.ArgumentParser(description=__doc__)
+    ap.add_argument('--v3-ckpt', type=Path, default=DEFAULT_V3_CKPT,
+                    help='legacy v3 checkpoint used by Test 1 (dual regression)')
+    ap.add_argument('--device', default='cpu',
+                    help="device for the tests (default 'cpu')")
+    args = ap.parse_args(argv)
+
+    V3_CKPT = Path(args.v3_ckpt)
     torch.manual_seed(0)
+    print(f"repo root : {PROJECT}")
+    print(f"v3 ckpt   : {V3_CKPT} ({'present' if V3_CKPT.exists() else 'MISSING'})")
+    print(f"device    : {args.device}\n")
+
     tests = [
         ("Test 1 — dual regression vs legacy v3", test1_dual_regression),
         ("Test 2 — HE-only regression + init independence",
@@ -765,6 +1007,10 @@ def main():
         ("Test 4 — EMA prototype independence", test4_ema_independence),
         ("Test 5 — MIL pluggability / decoupling", test5_mil_decoupling),
         ("Test 6 — config, masks, errors, restore", test6_config_and_restore),
+        ("Test 7 — model_config-only restore + init hash", test7_model_config_restore),
+        ("Test 8 — cached return_features + mask policy", test8_feature_cache_and_masks),
+        ("Test 9 — seed/output resolution + optimizer coverage",
+         test9_seed_and_output_resolution),
     ]
     passed = 0
     for name, fn in tests:

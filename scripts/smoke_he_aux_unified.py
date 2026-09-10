@@ -15,8 +15,12 @@ script, on **real C16 features**:
      the parameter count, grad-norm and whether the optimizer covers it;
   4. checks the missing-stain error path.
 
+Paths resolve from this file's location (repo root); the feature root, label
+files and device are all CLI arguments, so nothing here is machine-specific.
+
 Usage:
-  python scripts/smoke_he_aux_unified.py [--config NAME] [--device cuda:2]
+  python scripts/smoke_he_aux_unified.py [--config NAME ...] [--device cuda:2]
+      [--feature-base-dir DIR] [--train-labels CSV] [--val-labels CSV]
 """
 import argparse, json, sys, traceback
 from pathlib import Path
@@ -24,20 +28,30 @@ from pathlib import Path
 import torch
 import torch.nn.functional as F
 
-PROJECT = Path("/home/Public/lillan/Two_Sage_RRT-/TwoStageRRT")
+PROJECT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(PROJECT))
-import os
-os.chdir(str(PROJECT))
 
 from data.c16_multimodal_dataset import C16MultimodalDataset
 from models.he_aux_unified import build_he_aux_unified_from_config
 
-CONFIG_DIR = PROJECT / "configs" / "he_aux_unified"
+DEFAULT_CONFIG_DIR = PROJECT / "configs" / "he_aux_unified"
 SMOKE_MAX_PATCHES = 256        # keep the smoke run small; real runs use 2500
 
 
-def load_cfg(name):
-    return json.loads((CONFIG_DIR / f"{name}.json").read_text())
+def load_cfg(name, config_dir=None):
+    return json.loads((Path(config_dir or DEFAULT_CONFIG_DIR) / f"{name}.json")
+                      .read_text())
+
+
+def apply_overrides(data_cfg, args):
+    """CLI overrides for the real-data locations; config values are the default."""
+    if args.feature_base_dir:
+        data_cfg['feature_base_dir'] = args.feature_base_dir
+    if args.train_labels:
+        data_cfg['train_label_file'] = args.train_labels
+    if args.val_labels:
+        data_cfg['val_label_file'] = args.val_labels
+    return data_cfg
 
 
 def resolve_feature_dirs(data_cfg, mapping_override=None):
@@ -66,9 +80,10 @@ def check_stain_dirs(feature_dirs, strict=True):
     return report
 
 
-def run_case(name, device):
-    cfg = load_cfg(name)
-    data_cfg, model_cfg = cfg['data'], cfg['model']
+def run_case(name, device, args):
+    cfg = load_cfg(name, args.config_dir)
+    data_cfg = apply_overrides(cfg['data'], args)
+    model_cfg = cfg['model']
     mods = data_cfg['modalities']
     lines = [f"── {name}: modalities={mods} device={device}"]
 
@@ -84,7 +99,7 @@ def run_case(name, device):
     ds = C16MultimodalDataset(
         feature_dirs={m: str(feature_dirs[m]) for m in mods},
         label_file=data_cfg['train_label_file'],
-        max_patches=SMOKE_MAX_PATCHES,
+        max_patches=args.max_patches,
         preload=False, verbose=False, sampling='random',
         sample_seed=data_cfg.get('sample_seed', 42), per_epoch=False,
         strict_modalities=strict)
@@ -180,18 +195,31 @@ def run_case(name, device):
 
 
 def main():
-    ap = argparse.ArgumentParser()
+    ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument('--config', nargs='*',
-                    default=['he_only', 'he_pr', 'he_4aux'])
-    ap.add_argument('--device', default='cuda:2')
+                    default=['he_only', 'he_pr', 'he_4aux'],
+                    help='config basenames under --config-dir')
+    ap.add_argument('--config-dir', default=str(DEFAULT_CONFIG_DIR),
+                    help='directory holding the example configs')
+    ap.add_argument('--device', default='cuda:0')
+    ap.add_argument('--max-patches', type=int, default=SMOKE_MAX_PATCHES)
+    ap.add_argument('--feature-base-dir', default=None,
+                    help='override data.feature_base_dir')
+    ap.add_argument('--train-labels', default=None,
+                    help='override data.train_label_file')
+    ap.add_argument('--val-labels', default=None,
+                    help='override data.val_label_file')
     args = ap.parse_args()
 
     dev = torch.device(args.device if torch.cuda.is_available() else 'cpu')
+    print(f"repo root  : {PROJECT}")
+    print(f"config dir : {args.config_dir}")
+    print(f"device     : {dev}\n")
     torch.manual_seed(42)
     ok = 0
     for name in args.config:
         try:
-            for line in run_case(name, dev):
+            for line in run_case(name, dev, args):
                 print(line)
             print(f"[PASS] smoke {name}\n")
             ok += 1

@@ -81,6 +81,7 @@ class C16MultimodalDataset:
         self.sample_seed = sample_seed
         self.per_epoch = per_epoch
         self.strict_modalities = strict_modalities
+        self.label_file = str(label_file)
         self._epoch = 0
 
         if verbose:
@@ -146,6 +147,40 @@ class C16MultimodalDataset:
                   f"{self.modalities} (set data.strict_modalities=false to "
                   f"restore the lenient behaviour)")
 
+    def _find_feature_file(self, mod, slide_id):
+        """在某个染色的 normal/ tumor/ test/ 下查找该 slide 的特征文件。"""
+        mod_dir = self.feature_dirs[mod]
+        for subdir in ['normal', 'tumor', 'test']:
+            candidate = mod_dir / subdir / f"{slide_id}.pt"
+            if candidate.exists():
+                return candidate
+        return None
+
+    def _check_label_coverage(self):
+        """strict 模式：以 label CSV 为基准，每种染色都必须覆盖每个 slide ID。
+
+        之前的检查只以第一个模态的目录列表为基准 —— label CSV 里有、但第一个模态
+        目录里没有的 slide 会被静默忽略。这里改成以 label CSV 为准逐个染色核对，
+        任何染色或任何 slide 缺失都直接报错。
+        """
+        missing = {}
+        for mod in self.modalities:
+            absent = [sid for sid in self.labels
+                      if self._find_feature_file(mod, sid) is None]
+            if absent:
+                missing[mod] = absent
+        if missing:
+            detail = '; '.join(
+                f"{m}: {len(ids)}/{len(self.labels)} missing "
+                f"(e.g. {', '.join(sorted(ids)[:3])})"
+                for m, ids in sorted(missing.items()))
+            raise FileNotFoundError(
+                f"strict modality check failed against {self.label_file!r} "
+                f"({len(self.labels)} labelled slide IDs) — {detail}. Every "
+                f"configured stain must cover every labelled slide; refusing to "
+                f"silently shrink the dataset (set data.strict_modalities=false "
+                f"to restore the lenient behaviour)")
+
     def _build_samples(self):
         """构建样本列表，匹配所有模态的特征文件"""
         first_mod = self.modalities[0]
@@ -153,6 +188,7 @@ class C16MultimodalDataset:
 
         if self.strict_modalities:
             self._check_modality_dirs()
+            self._check_label_coverage()
 
         slide_feature_map = {}
         for subdir in ['normal', 'tumor', 'test']:
@@ -167,13 +203,7 @@ class C16MultimodalDataset:
         for slide_id in list(slide_feature_map.keys()):
             for mod in self.modalities[1:]:
                 mod_dir = self.feature_dirs[mod]
-                found = False
-                for subdir in ['normal', 'tumor', 'test']:
-                    candidate = mod_dir / subdir / f"{slide_id}.pt"
-                    if candidate.exists():
-                        found = True
-                        break
-                if not found:
+                if self._find_feature_file(mod, slide_id) is None:
                     if self.strict_modalities:
                         raise FileNotFoundError(
                             f"{slide_id}: missing feature file for configured "
