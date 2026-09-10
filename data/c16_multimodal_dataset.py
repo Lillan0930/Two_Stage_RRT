@@ -53,6 +53,12 @@ class C16MultimodalDataset:
     per_epoch : bool
         If True, epoch is mixed into the seed (via set_epoch()).
         Train=True, Val/Test=False.
+    strict_modalities : bool
+        If True, a configured stain that is absent/empty on disk, or a slide
+        missing one of the configured stains, raises instead of being skipped.
+        Default False keeps the historical lenient behaviour bit-for-bit
+        (existing configs are unaffected); configs that must not silently
+        shrink the modality list / the dataset set ``data.strict_modalities``.
     """
 
     def __init__(self,
@@ -63,7 +69,8 @@ class C16MultimodalDataset:
                  verbose: bool = True,
                  sampling: str = 'first',
                  sample_seed: int = 0,
-                 per_epoch: bool = False):
+                 per_epoch: bool = False,
+                 strict_modalities: bool = False):
         self.feature_dirs = {k: Path(v) for k, v in feature_dirs.items()}
         self.modalities = list(feature_dirs.keys())
         self.num_modalities = len(self.modalities)
@@ -73,6 +80,7 @@ class C16MultimodalDataset:
         self.sampling = sampling
         self.sample_seed = sample_seed
         self.per_epoch = per_epoch
+        self.strict_modalities = strict_modalities
         self._epoch = 0
 
         if verbose:
@@ -122,10 +130,29 @@ class C16MultimodalDataset:
         if self.verbose:
             print(f"Loaded {len(self.labels)} labels")
 
+    def _check_modality_dirs(self):
+        """strict 模式：每个配置的染色目录必须存在且非空。"""
+        empty = []
+        for mod in self.modalities:
+            d = self.feature_dirs[mod]
+            n = sum(1 for _ in d.rglob('*.pt')) if d.is_dir() else 0
+            if n == 0:
+                empty.append((mod, str(d)))
+        if empty:
+            raise FileNotFoundError(
+                "configured stain(s) absent or empty on disk: "
+                + ', '.join(f"{m} → {p}" for m, p in empty)
+                + f"; refusing to silently shrink the modality list "
+                  f"{self.modalities} (set data.strict_modalities=false to "
+                  f"restore the lenient behaviour)")
+
     def _build_samples(self):
         """构建样本列表，匹配所有模态的特征文件"""
         first_mod = self.modalities[0]
         first_dir = self.feature_dirs[first_mod]
+
+        if self.strict_modalities:
+            self._check_modality_dirs()
 
         slide_feature_map = {}
         for subdir in ['normal', 'tumor', 'test']:
@@ -147,6 +174,12 @@ class C16MultimodalDataset:
                         found = True
                         break
                 if not found:
+                    if self.strict_modalities:
+                        raise FileNotFoundError(
+                            f"{slide_id}: missing feature file for configured "
+                            f"stain {mod!r} under {mod_dir} (searched "
+                            f"normal/ tumor/ test/); refusing to silently drop "
+                            f"the slide or the stain")
                     del slide_feature_map[slide_id]
                     if self.verbose:
                         print(f"Warning: {slide_id} missing in modality {mod}, skipped")
@@ -157,6 +190,11 @@ class C16MultimodalDataset:
                 'slide_id': slide_id,
                 'label': self.labels[slide_id],
             })
+
+        if self.strict_modalities and not self.samples:
+            raise RuntimeError(
+                f"no sample matched across modalities {self.modalities} with "
+                f"labels from {self.label_file!r}")
 
         label_counts = {}
         for s in self.samples:

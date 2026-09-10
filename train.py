@@ -435,6 +435,9 @@ class Trainer:
 
             train_sampling = data_cfg.get('sampling', 'first')
             train_seed = data_cfg.get('sample_seed', 0)
+            # strict_modalities 缺省 False → 历史行为不变；置 True 时配置的染色
+            # 缺失会显式报错，而不是静默丢样本 / 静默缩小模态列表。
+            strict_mods = data_cfg.get('strict_modalities', False)
             train_dataset = C16MultimodalDataset(
                 feature_dirs=feature_dirs,
                 label_file=str(train_csv),
@@ -444,6 +447,7 @@ class Trainer:
                 sampling=train_sampling,
                 sample_seed=train_seed,
                 per_epoch=(train_sampling == 'random'),
+                strict_modalities=strict_mods,
             )
             self._train_dataset = train_dataset  # for set_epoch() call
             collate_fn = c16_multimodal_collate_fn
@@ -495,6 +499,7 @@ class Trainer:
                     sampling=train_sampling,
                     sample_seed=train_seed,
                     per_epoch=False,
+                    strict_modalities=strict_mods,
                 )
                 val_loader = DataLoader(
                     val_dataset,
@@ -573,6 +578,12 @@ class Trainer:
         """创建 MM_RRT_ABMIL 模型"""
         model_cfg = self.config['model']
         data_cfg = self.config['data']
+
+        # ── HE-anchored unified path: HE + any subset of auxiliary stains with a
+        #    pluggable MIL head (models/he_aux_unified.py).  Every other
+        #    stage2_type keeps using MM_RRT_ABMIL below, unchanged. ──
+        if model_cfg.get('stage2_type') == 'he_aux_unified':
+            return self._create_he_aux_unified(model_cfg, data_cfg)
 
         model = MM_RRT_ABMIL(
             # 模态配置
@@ -666,6 +677,56 @@ class Trainer:
             f"Total Params: {self.model_total_params:,}, "
             f"Trainable: {self.model_trainable_params:,}"
         )
+
+        return model
+
+    def _create_he_aux_unified(self, model_cfg, data_cfg):
+        """创建 HE-anchored 统一模型: HE + 任意辅助染色子集 + 可插拔 MIL。
+
+        单最终 CE、正常端到端反传 —— 不启用辅助单模态分类头 / aux loss
+        (那些属于旧的 MM_RRT_ABMIL 多模态路径)。
+        """
+        from models.he_aux_unified import build_he_aux_unified_from_config
+
+        if self.aux_loss_weight > 0:
+            raise ValueError(
+                "stage2_type='he_aux_unified' uses a single final CE only; "
+                f"set training.aux_loss_weight=0 (got {self.aux_loss_weight}).")
+
+        model = build_he_aux_unified_from_config(model_cfg, data_cfg).to(self.device)
+
+        self.model_total_params = sum(p.numel() for p in model.parameters())
+        self.model_trainable_params = sum(
+            p.numel() for p in model.parameters() if p.requires_grad)
+        self.aux_classifiers = None
+
+        info = model.get_config()
+        self.logger.info(
+            f"Model: HEAuxUnifiedModel ({model.num_modalities} stains "
+            f"{info['modality_list']}, HE={info['he_stain']}, "
+            f"aux={info['aux_stains']}, mil={info['mil_cfg']['name']})")
+        self.logger.info(
+            f"Fusion: {info['fusion']['formula']} "
+            f"(residual_scale={info['fusion']['residual_scale']}, "
+            f"tau={info['fusion']['tau']}, "
+            f"beta={info['fusion']['prototype_momentum']})")
+        self.logger.info(f"Encoder cfg (resolved): {info['encoder_cfg_resolved']}")
+        self.logger.info(
+            f"Total Params: {self.model_total_params:,}, "
+            f"Trainable: {self.model_trainable_params:,}")
+
+        # 所有启用分支 + MIL 参数都在 optimizer 的单一参数组里，且无重复
+        seen, dupes = set(), []
+        for name, p in model.named_parameters():
+            if id(p) in seen:
+                dupes.append(name)
+            seen.add(id(p))
+        if dupes:
+            raise RuntimeError(
+                f"duplicate parameter objects in the unified model: {dupes[:5]}")
+        self.logger.info(
+            f"Params covered by the optimizer: {len(seen)} unique tensors "
+            f"(no duplicates)")
 
         return model
 
@@ -1410,6 +1471,18 @@ class Trainer:
                     f"|par|={gate_stats.get('parallel_norm',0):.3f} "
                     f"cos(he,orth)={gate_stats.get('cos_after',0):.4f}"
                 )
+            elif 'branch_delta_norm' in gate_stats:
+                # he_aux_unified：HE 表征范数 + 每个辅助分支的残差范数。
+                # 该模型的 fusion_stats 用的是这批键；若不加这一支，会落到下面的
+                # 兜底分支打印 alpha/delta_norm/att_norm 三个恒为 0 的旧键，
+                # 看起来像"残差塌成 0"，实际只是没读到。
+                deltas = gate_stats.get('branch_delta_norm') or {}
+                d_str = ' '.join(f"{s}:{v:.4f}" for s, v in deltas.items())
+                self.logger.info(
+                    f"Fusion(HE+{gate_stats.get('n_branches',0)}aux): "
+                    f"|H|={gate_stats.get('z_he_norm',0):.3f}"
+                    + (f" |Δ| {d_str}" if d_str else "")
+                )
             else:
                 self.logger.info(
                     f"Fusion: α={gate_stats.get('alpha',0):.4f} "
@@ -1799,6 +1872,10 @@ class Trainer:
                         'modalities': self.modalities,
                         'num_modalities': self.num_modalities,
                         'aux_classifiers_state': self.aux_classifiers.state_dict() if self.aux_classifiers is not None else None,
+                        # 统一模型(he_aux_unified)的完整结构配置：模态列表 / encoder cfg
+                        # / 融合配置 / MIL 名称与参数。旧模型无 get_config → 不写入该键。
+                        **({'model_config': model.get_config()}
+                           if hasattr(model, 'get_config') else {}),
                     }
                     torch.save(checkpoint, save_path)
                     self.logger.info(
@@ -1837,6 +1914,8 @@ class Trainer:
                     'modalities': self.modalities,
                     'num_modalities': self.num_modalities,
                     'aux_classifiers_state': self.aux_classifiers.state_dict() if self.aux_classifiers is not None else None,
+                    **({'model_config': model.get_config()}
+                       if hasattr(model, 'get_config') else {}),
                 }, save_path)
                 if optuna_trial is not None:
                     optuna_trial.report(0.0, epoch)
