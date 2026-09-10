@@ -146,21 +146,6 @@ def main():
         "train_persistent_workers": train_persistent_workers,
         "initialization": initialization,
     }
-    # v6：额外记录两个 loss（末 epoch 均值），供 §7 报告梯度分工的 loss 分布。
-    if getattr(trainer, "is_v6", False):
-        result["v6_loss_he"] = float(trainer.v6_avg_loss_he)
-        result["v6_loss_fused"] = float(trainer.v6_avg_loss_fused)
-    # v7：记录 variant、两个 loss、每 epoch fused/HE AUC、初始权重 hash（§4/§6）。
-    if getattr(trainer, "is_v7", False):
-        result["v7_variant"] = "A" if trainer.v7_fused_he_detach else "B"
-        result["v7_loss_he"] = float(trainer.v7_avg_loss_he)
-        result["v7_loss_fused"] = float(trainer.v7_avg_loss_fused)
-        result["v7_epoch_history"] = list(trainer.v7_epoch_history)
-        result["init_hash"] = trainer.init_hash
-    # v8：记录 PR memory mode 与初始权重 hash（§5）。
-    if getattr(trainer, "is_v8", False):
-        result["pr_memory_mode"] = trainer.v8_pr_memory_mode
-        result["init_hash"] = trainer.init_hash
     with open(out_dir / "result.json", "w") as f:
         json.dump(result, f, indent=2)
 
