@@ -570,7 +570,132 @@ class Trainer:
             )
             return train_loader, val_loader
 
-        # ── C17 默认模式 ──
+        # ── C17 显式模式 ──
+        # `dataset_type: 'c17'` 走 C17MultimodalDataset（`{patient}/{patient}_node_{k}.pt`
+        # 布局），患者级 split 由 `data.val_start` 决定（默认 100 ⇒ patient_000..099
+        # train / patient_100..199 test-as-val，与历史 C17 baseline 一致）。
+        # 与 C16 分支的区别只在于特征目录布局；采样/严格性/collate 语义逐字段同源。
+        if dataset_type == 'c17':
+            from data.c17_multimodal_dataset import (
+                C17MultimodalDataset, c17_multimodal_collate_fn,
+            )
+
+            feature_dirs = build_feature_dirs(
+                data_cfg['feature_base_dir'], data_cfg['modalities'],
+                dir_mapping=data_cfg.get('dir_mapping', None)
+            )
+
+            label_file = data_cfg['label_file']
+            val_start = data_cfg.get('val_start',
+                                     self.config.get('data_split', {}).get('val_start', 100))
+
+            lab_df = pd.read_csv(label_file)
+            if 'slide_id' not in lab_df.columns:
+                raise ValueError(
+                    f"{label_file}: 缺少 'slide_id' 列，实际列 = {list(lab_df.columns)}")
+            lab_df['patient_id'] = lab_df['slide_id'].apply(
+                lambda x: '_'.join(str(x).split('_')[:2]))
+
+            def _pnum(p):
+                try:
+                    return int(str(p).split('_')[-1])
+                except (ValueError, IndexError):
+                    return 0
+
+            patients = sorted(lab_df['patient_id'].unique())
+            train_patients = [p for p in patients if _pnum(p) < val_start]
+            val_patients = [p for p in patients if _pnum(p) >= val_start]
+
+            def _slides(plist):
+                return sorted(lab_df[lab_df['patient_id'].isin(plist)]['slide_id'])
+
+            train_ids, val_ids = _slides(train_patients), _slides(val_patients)
+            self.logger.info(
+                f"C17 patient-level split (val_start={val_start}): "
+                f"train={len(train_patients)} patients / {len(train_ids)} slides, "
+                f"test-as-val={len(val_patients)} patients / {len(val_ids)} slides"
+            )
+
+            train_sampling = data_cfg.get('sampling', 'first')
+            train_seed = data_cfg.get('sample_seed', 0)
+            strict_mods = data_cfg.get('strict_modalities', False)
+            same_patch = data_cfg.get('require_same_patch_count', True)
+
+            train_dataset = C17MultimodalDataset(
+                feature_dirs=feature_dirs,
+                label_file=label_file,
+                slide_ids=train_ids,
+                max_patches=data_cfg.get('max_patches', 10000),
+                preload=data_cfg.get('preload', False),
+                verbose=True,
+                sampling=train_sampling,
+                sample_seed=train_seed,
+                per_epoch=(train_sampling == 'random'),
+                strict_modalities=strict_mods,
+                require_same_patch_count=same_patch,
+            )
+            self._train_dataset = train_dataset       # for set_epoch() call
+
+            # per_epoch random sampling 与 persistent worker 冲突：worker 持有独立
+            # Dataset 副本并跨 epoch 保留，主进程 set_epoch() 不会更新 worker 内的
+            # _epoch，所以 train per_epoch=True 必须关闭 persistent_workers。
+            train_per_epoch = bool(getattr(train_dataset, "per_epoch", False))
+            train_persistent_workers = env_cfg["num_workers"] > 0 and not train_per_epoch
+            self._train_persistent_workers = train_persistent_workers
+            if train_per_epoch:
+                assert not train_persistent_workers, (
+                    "per_epoch sampling requires persistent_workers=False, "
+                    "otherwise worker dataset epoch state will remain stale"
+                )
+
+            self.logger.info(
+                f"C17 Train sampler: sampling={train_sampling}, "
+                f"per_epoch={train_dataset.per_epoch}, "
+                f"num_workers={env_cfg['num_workers']}, "
+                f"persistent_workers={train_persistent_workers}, "
+                f"strict_modalities={strict_mods}"
+            )
+
+            train_loader = DataLoader(
+                train_dataset,
+                batch_size=train_cfg['batch_size'],
+                shuffle=True,
+                collate_fn=c17_multimodal_collate_fn,
+                num_workers=env_cfg['num_workers'],
+                pin_memory=True,
+                persistent_workers=train_persistent_workers,
+            )
+
+            val_dataset = C17MultimodalDataset(
+                feature_dirs=feature_dirs,
+                label_file=label_file,
+                slide_ids=val_ids,
+                max_patches=data_cfg.get('max_patches', 10000),
+                preload=data_cfg.get('preload', False),
+                verbose=True,
+                sampling=train_sampling,
+                sample_seed=train_seed,
+                per_epoch=False,
+                strict_modalities=strict_mods,
+                require_same_patch_count=same_patch,
+            )
+            val_loader = DataLoader(
+                val_dataset,
+                batch_size=train_cfg['batch_size'],
+                shuffle=False,
+                collate_fn=c17_multimodal_collate_fn,
+                num_workers=env_cfg['num_workers'],
+                pin_memory=True,
+                persistent_workers=(env_cfg['num_workers'] > 0),
+            )
+
+            self.logger.info(
+                f"Train batches: {len(train_loader)}, "
+                f"Val batches: {len(val_loader)}"
+            )
+            return train_loader, val_loader
+
+        # ── C17 默认模式（旧：MultiModalFeatureDataset + align_patches） ──
 
         feature_dirs = build_feature_dirs(
             data_cfg['feature_base_dir'], data_cfg['modalities'],
@@ -903,7 +1028,20 @@ class Trainer:
                 })
             params = param_groups
 
-        optimizer = optim.Adam(params, lr=lr, weight_decay=wd)
+        # 优化器类型由 training.optimizer.type 决定。默认 'adam' —— 与改动前
+        # 的行为逐位一致，历史实验不受影响；C17 正式实验显式指定 'adamw'。
+        opt_cfg = train_cfg.get('optimizer') or {}
+        opt_type = str(opt_cfg.get('type', 'adam')).lower()
+        if opt_type == 'adamw':
+            optimizer = optim.AdamW(params, lr=lr, weight_decay=wd)
+        elif opt_type == 'adam':
+            optimizer = optim.Adam(params, lr=lr, weight_decay=wd)
+        elif opt_type == 'sgd':
+            optimizer = optim.SGD(params, lr=lr, weight_decay=wd,
+                                  momentum=opt_cfg.get('momentum', 0.9))
+        else:
+            raise ValueError(f"training.optimizer.type 不支持: {opt_type!r}")
+        self.optimizer_type_actual = type(optimizer).__name__
 
         # 优化器创建后核对：每个 requires_grad 的参数都恰好出现一次。
         # 漏掉参数会静默不训练，重复参数会让该参数实际 lr 翻倍 —— 两者都不报错，
@@ -916,9 +1054,13 @@ class Trainer:
                 optimizer, mode='max', patience=5, factor=0.5
             )
         elif scheduler_cfg.get('type') == 'cosine':
+            # eta_min 默认 0.0 —— 与改动前逐位一致，历史实验不受影响；
+            # C17 正式实验显式传 lr*0.01（对齐历史 run_experiment.py）。
+            eta_min = float(scheduler_cfg.get('eta_min', 0.0))
             scheduler = optim.lr_scheduler.CosineAnnealingLR(
-                optimizer, T_max=train_cfg['num_epochs']
+                optimizer, T_max=train_cfg['num_epochs'], eta_min=eta_min
             )
+            self.eta_min_actual = eta_min
         elif scheduler_cfg.get('type') == 'step':
             scheduler = optim.lr_scheduler.StepLR(
                 optimizer,
@@ -1531,9 +1673,11 @@ class Trainer:
                 self.logger.info("Using CrossEntropyLoss with auto class_weights")
 
         # 早停配置
-        early_stop_patience = self.config['training'].get(
-            'early_stopping', {}
-        ).get('patience', 10)
+        _es_cfg = self.config['training'].get('early_stopping', {}) or {}
+        early_stop_patience = _es_cfg.get('patience', 10)
+        # 最早允许停止的 epoch（0-based，语义对齐历史 EarlyStopping.stop_epoch）。
+        # 默认 0 = 不设下限，与改动前逐位一致。
+        early_stop_min_epochs = int(_es_cfg.get('min_epochs', 0))
         early_stop_counter = 0
         num_epochs = self.config['training']['num_epochs']
 
@@ -1542,6 +1686,21 @@ class Trainer:
         self.logger.info(f"Total Epochs: {num_epochs}")
         self.logger.info(f"Modalities: {self.modalities}")
         self.logger.info(f"Fusion: {self.config['model'].get('fusion_type', 'N/A')}")
+        # 实际生效的 optimizer / scheduler —— 便于核对"配置写的"与"真正跑的"一致
+        _t = self.config['training']
+        _s = _t.get('scheduler', {}) or {}
+        self.logger.info(
+            f"Optimizer(actual): {getattr(self, 'optimizer_type_actual', 'N/A')} "
+            f"lr={_t['learning_rate']} weight_decay={_t['weight_decay']}")
+        self.logger.info(
+            f"Scheduler(actual): {type(scheduler).__name__ if scheduler else None} "
+            f"T_max={_t['num_epochs']} "
+            f"eta_min={getattr(self, 'eta_min_actual', 0.0)} "
+            f"(type={_s.get('type')})")
+        self.logger.info(
+            f"EarlyStopping(actual): patience={early_stop_patience} "
+            f"min_epochs={early_stop_min_epochs} "
+            f"monitor={self.monitor_metric_name} mode={self.monitor_mode}")
         self.logger.info("=" * 60)
 
         # Warmup for correction: α=0 for first N epochs, then α=0.1
@@ -1682,8 +1841,9 @@ class Trainer:
                         import optuna
                         raise optuna.exceptions.TrialPruned()
 
-                # 早停检查
-                if early_stop_counter >= early_stop_patience:
+                # 早停检查（epoch >= min_epochs 才允许停，语义同历史 stop_epoch）
+                if (early_stop_counter >= early_stop_patience
+                        and epoch >= early_stop_min_epochs):
                     self.logger.info(
                         f"Early stopping triggered after {epoch + 1} epochs"
                     )
