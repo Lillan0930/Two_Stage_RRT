@@ -1,0 +1,156 @@
+data:
+  dataset_type: c17
+  modalities:
+  - HE
+  - HER2
+  - Ki67
+  dir_mapping:
+    HE: C17_HE_new_features
+    HER2: C17_HER2_new_feature
+    Ki67: C17_Ki67_new_features
+  label_file: /home/Public/lillan/data/C17_binary_label.csv
+  feature_base_dir: /home/Public/lillan/features_result/C17_features
+  val_start: 100
+  sample_seed: 42
+  input_dim: 768
+  num_classes: 2
+  max_patches: 5000
+  preload: false
+  sampling: random
+  no_validation: false
+  strict_modalities: true
+  require_same_patch_count: true
+model:
+  stage2_type: he_aux_unified
+  mlp_dim: 256
+  dropout: 0.25
+  init_seed: 42
+  region_num: 4
+  n_layers: 1
+  n_heads: 4
+  drop_path: 0.25
+  trans_dropout: 0.1
+  epeg: true
+  epeg_k: 15
+  crmsa_k: 3
+  cr_msa: true
+  all_shortcut: false
+  crmsa_heads: 8
+  crmsa_mlp: false
+  encoder_cfg:
+    HE:
+      region_num: 4
+      epeg_k: 15
+      crmsa_k: 3
+      n_heads: 4
+      drop_path: 0.25
+    PR:
+      region_num: 4
+      epeg_k: 15
+      crmsa_k: 3
+      n_heads: 4
+      drop_path: 0.25
+    ER:
+      region_num: 4
+      epeg_k: 15
+      crmsa_k: 3
+      n_heads: 4
+      drop_path: 0.25
+    HER2:
+      region_num: 4
+      epeg_k: 15
+      crmsa_k: 3
+      n_heads: 4
+      drop_path: 0.25
+    Ki67:
+      region_num: 4
+      epeg_k: 15
+      crmsa_k: 3
+      n_heads: 4
+      drop_path: 0.25
+  stage2_cfg:
+    region_num: 4
+    crmsa_heads: 8
+    crmsa_k: 3
+    drop_out: 0.1
+    drop_path: 0.0
+    epeg: false
+    epeg_k: 15
+    crmsa_mlp: false
+    ffn: false
+    qkv_bias: false
+    temperature: 0.15
+    residual_scale: 0.05
+    disable_cross: false
+    prototype_momentum: 0.995
+  mil_cfg:
+    name: abmil
+    kwargs:
+      hidden_dim: 64
+      dropout_rate: 0.05
+training:
+  batch_size: 1
+  num_epochs: 30
+  learning_rate: 0.00007407200227375529
+  weight_decay: 0.000006699208178750483
+  optimizer:
+    type: adamw
+  scheduler:
+    type: cosine
+    eta_min: 0.0000007407200227375528
+  use_amp: false
+  focal_loss: false
+  label_smoothing: 0.0
+  kd_enabled: false
+  modality_dropout: 0.0
+  aux_loss_weight: 0.0
+  early_stopping:
+    monitor: val_auc
+    mode: max
+    patience: 15
+    min_epochs: 10
+  no_validation: false
+data_split:
+  val_start: 100
+environment:
+  device: cuda:0
+  num_workers: 2
+  seed: 42
+seeds:
+  model_seed: 42
+  sampling_seed: 42
+output:
+  save_dir: /home/Public/lillan/Two_Sage_RRT-/TwoStageRRT/tune/c17_v3/tmp/trial_HE_HER2_Ki67_002
+  log_dir: /home/Public/lillan/Two_Sage_RRT-/TwoStageRRT/tune/c17_v3/tmp/trial_HE_HER2_Ki67_002/logs
+  img_dir: /home/Public/lillan/Two_Sage_RRT-/TwoStageRRT/tune/c17_v3/tmp/trial_HE_HER2_Ki67_002/img
+protocol:
+  evaluation_protocol: Train / Test-as-Val
+  split: 'patient-level by index: patient_000..099 train / patient_100..199 test'
+  note: 官方 test 集在训练中用于 checkpoint selection / early stopping，与历史 C17 RRT_ABMIL baseline 的协议一致（best test
+    AUC + EarlyStopping(patience=15, min_epochs=10)），属既定 val-as-test 开发协议，非严格意义的独立 untouched test。
+experiment:
+  name: Ours main (C17 + ABMIL)
+  combination: HE+HER2+Ki67
+  modalities:
+  - HE
+  - HER2
+  - Ki67
+  stage2_type: he_aux_unified
+  fusion: v3-style HE-anchored residual cross fusion
+  mil: abmil
+  loss: CE only
+  seed: 42
+  seeds_file: /home/Public/lillan/work_results/ours_main/C17+abmil/seeds.json
+  role: Optuna 搜索 trial（不修改 v3 结构；数据划分与正式 run 逐字段相同）
+  optuna:
+    combination: HE+HER2+Ki67
+    seed: 42
+    trial: 2
+    params:
+      learning_rate: 0.00007407200227375529
+      weight_decay: 0.000006699208178750483
+      dropout: 0.25
+      residual_scale: 0.05
+      tau: 0.15
+      prototype_momentum: 0.995
+    physical_gpu: '4'

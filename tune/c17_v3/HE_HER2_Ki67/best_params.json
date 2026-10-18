@@ -1,0 +1,68 @@
+{
+  "combination": "HE+HER2+Ki67",
+  "search_seed": 42,
+  "holdout_seeds": [
+    3611,
+    6430,
+    39998
+  ],
+  "best_trial": 11,
+  "best_value": 0.9481144474775048,
+  "params": {
+    "learning_rate": 0.00022112866456574473,
+    "weight_decay": 6.697536153551289e-06,
+    "dropout": 0.35,
+    "residual_scale": 0.1,
+    "tau": 0.2,
+    "prototype_momentum": 0.99
+  },
+  "protocol": "epochs=30 patience=15 min_epochs=10 T_max=30 eta_min=lr*0.01",
+  "sampler_seed": 2026,
+  "search_space": {
+    "learning_rate": {
+      "low": 5e-05,
+      "high": 0.0003,
+      "log": true
+    },
+    "weight_decay": {
+      "low": 1e-06,
+      "high": 0.0001,
+      "log": true
+    },
+    "dropout": [
+      0.05,
+      0.1,
+      0.15,
+      0.25,
+      0.35
+    ],
+    "residual_scale": [
+      0.05,
+      0.075,
+      0.1,
+      0.15,
+      0.2
+    ],
+    "tau": [
+      0.1,
+      0.15,
+      0.2,
+      0.3
+    ],
+    "prototype_momentum": [
+      0.95,
+      0.98,
+      0.99,
+      0.995
+    ]
+  },
+  "note": "6 \u4e2a\u8d85\u53c2\uff1b\u4e0d\u6539 v3 \u7ed3\u6784\uff1b\u6570\u636e\u5212\u5206\u4e0e\u6b63\u5f0f run \u76f8\u540c\u3002",
+  "holdout_validation": {
+    "status": "done",
+    "delta_mean": -0.005550500454958973,
+    "n_seeds_improved": 1,
+    "verdict": "not_improved",
+    "result_file": "/home/Public/lillan/Two_Sage_RRT-/TwoStageRRT/tune/c17_v3/HE_HER2_Ki67/holdout_result.json",
+    "validated_at": "2026-10-16T20:41:53"
+  }
+}

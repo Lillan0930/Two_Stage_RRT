@@ -1,0 +1,173 @@
+{
+  "combination": "HE+PR",
+  "search_seed": 42,
+  "holdout_seeds": [
+    3611,
+    6430,
+    39998
+  ],
+  "protocol": "epochs=30 patience=15 min_epochs=10 T_max=30 eta_min=lr*0.01",
+  "best_params": {
+    "learning_rate": 0.000242,
+    "weight_decay": 7.59e-06,
+    "dropout": 0.05,
+    "residual_scale": 0.1,
+    "tau": 0.2,
+    "prototype_momentum": 0.99
+  },
+  "best_trial": 0,
+  "search_best_value": 0.9492467900111212,
+  "runs": [
+    {
+      "combination": "HE+PR",
+      "seed": 3611,
+      "auc": 0.924001617632191,
+      "best_epoch": 16,
+      "epochs_run": 30,
+      "metrics": {
+        "AUC": 0.924001617632191,
+        "Accuracy": 0.913135593220339,
+        "Recall": 0.8598726114649682,
+        "Precision": 0.8766233766233766,
+        "F1": 0.8681672025723473,
+        "Specificity": 0.9396825396825397
+      },
+      "params": {
+        "learning_rate": 0.000242,
+        "weight_decay": 7.59e-06,
+        "dropout": 0.05,
+        "residual_scale": 0.1,
+        "tau": 0.2,
+        "prototype_momentum": 0.99
+      },
+      "params_reached": {
+        "learning_rate": 2.42e-06,
+        "weight_decay": 7.59e-06,
+        "dropout": 0.05,
+        "cross_branches": {
+          "PR": {
+            "residual_scale": 0.10000000149011612,
+            "tau": 0.2,
+            "beta": 0.99
+          }
+        },
+        "eta_min": 2.42e-06
+      }
+    },
+    {
+      "combination": "HE+PR",
+      "seed": 6430,
+      "auc": 0.9281569103225153,
+      "best_epoch": 11,
+      "epochs_run": 26,
+      "metrics": {
+        "AUC": 0.9281569103225153,
+        "Accuracy": 0.8728813559322034,
+        "Recall": 0.8598726114649682,
+        "Precision": 0.7803468208092486,
+        "F1": 0.8181818181818181,
+        "Specificity": 0.8793650793650793
+      },
+      "params": {
+        "learning_rate": 0.000242,
+        "weight_decay": 7.59e-06,
+        "dropout": 0.05,
+        "residual_scale": 0.1,
+        "tau": 0.2,
+        "prototype_momentum": 0.99
+      },
+      "params_reached": {
+        "learning_rate": 1.2776389628992831e-05,
+        "weight_decay": 7.59e-06,
+        "dropout": 0.05,
+        "cross_branches": {
+          "PR": {
+            "residual_scale": 0.10000000149011612,
+            "tau": 0.2,
+            "beta": 0.99
+          }
+        },
+        "eta_min": 2.42e-06
+      }
+    },
+    {
+      "combination": "HE+PR",
+      "seed": 39998,
+      "auc": 0.9440400363967243,
+      "best_epoch": 13,
+      "epochs_run": 28,
+      "metrics": {
+        "AUC": 0.9440400363967243,
+        "Accuracy": 0.9046610169491526,
+        "Recall": 0.8853503184713376,
+        "Precision": 0.8373493975903614,
+        "F1": 0.8606811145510835,
+        "Specificity": 0.9142857142857143
+      },
+      "params": {
+        "learning_rate": 0.000242,
+        "weight_decay": 7.59e-06,
+        "dropout": 0.05,
+        "residual_scale": 0.1,
+        "tau": 0.2,
+        "prototype_momentum": 0.99
+      },
+      "params_reached": {
+        "learning_rate": 5.037698908097416e-06,
+        "weight_decay": 7.59e-06,
+        "dropout": 0.05,
+        "cross_branches": {
+          "PR": {
+            "residual_scale": 0.10000000149011612,
+            "tau": 0.2,
+            "beta": 0.99
+          }
+        },
+        "eta_min": 2.42e-06
+      }
+    }
+  ],
+  "paired_vs_original": {
+    "pairs": [
+      {
+        "seed": 3611,
+        "orig_auc": 0.924001617632191,
+        "new_auc": 0.924001617632191,
+        "delta": 0.0,
+        "orig_best_epoch": 16,
+        "new_best_epoch": 16
+      },
+      {
+        "seed": 6430,
+        "orig_auc": 0.9281569103225153,
+        "new_auc": 0.9281569103225153,
+        "delta": 0.0,
+        "orig_best_epoch": 11,
+        "new_best_epoch": 11
+      },
+      {
+        "seed": 39998,
+        "orig_auc": 0.9440400363967243,
+        "new_auc": 0.9440400363967243,
+        "delta": 0.0,
+        "orig_best_epoch": 13,
+        "new_best_epoch": 13
+      }
+    ],
+    "n_pairs": 3,
+    "orig_auc_mean": 0.9320661881171436,
+    "new_auc_mean": 0.9320661881171436,
+    "delta_mean": 0.0,
+    "delta_std": 0.0,
+    "n_seeds_improved": 0,
+    "n_seeds_worse": 0,
+    "paired_ttest": {
+      "t": NaN,
+      "p": NaN,
+      "note": "n=3\uff0c\u529f\u6548\u6781\u4f4e\uff0c\u4ec5\u4f5c\u53c2\u8003"
+    }
+  },
+  "verdict": "not_improved",
+  "validated_at": "2026-10-16T17:35:56",
+  "validated_on_gpu": "7"
+}

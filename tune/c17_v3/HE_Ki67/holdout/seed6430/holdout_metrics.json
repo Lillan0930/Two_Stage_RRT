@@ -1,0 +1,36 @@
+{
+  "combination": "HE+Ki67",
+  "seed": 6430,
+  "auc": 0.9347993125063189,
+  "best_epoch": 15,
+  "epochs_run": 30,
+  "metrics": {
+    "AUC": 0.9347993125063189,
+    "Accuracy": 0.9110169491525424,
+    "Recall": 0.8789808917197452,
+    "Precision": 0.8571428571428571,
+    "F1": 0.8679245283018868,
+    "Specificity": 0.926984126984127
+  },
+  "params": {
+    "learning_rate": 0.0002754830410266845,
+    "weight_decay": 1.692691705012505e-06,
+    "dropout": 0.35,
+    "residual_scale": 0.075,
+    "tau": 0.1,
+    "prototype_momentum": 0.99
+  },
+  "params_reached": {
+    "learning_rate": 2.7548304102668453e-06,
+    "weight_decay": 1.692691705012505e-06,
+    "dropout": 0.35,
+    "cross_branches": {
+      "Ki67": {
+        "residual_scale": 0.07500000298023224,
+        "tau": 0.1,
+        "beta": 0.99
+      }
+    },
+    "eta_min": 2.7548304102668453e-06
+  }
+}

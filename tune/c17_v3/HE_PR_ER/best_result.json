@@ -1,0 +1,283 @@
+{
+  "combination": "HE+PR+ER",
+  "dataset": "C17",
+  "mil": "ABMIL",
+  "model": "he_aux_unified (v3-style HE-anchored residual cross fusion)",
+  "protocol": "Train / Test-as-Val \u2014\u2014 patient_000..099 train / patient_100..199 test-as-val\uff08\u4e0e\u6b63\u5f0f 140 runs \u540c\u4e00\u5212\u5206\uff0c\u672c\u6b21\u641c\u7d22\u672a\u91cd\u65b0\u5206\u6298\uff09",
+  "objective": "val_as_test AUC\uff08trainer \u91cd\u65b0\u52a0\u8f7d best checkpoint \u540e\u8bc4\u4f30\uff09",
+  "search": {
+    "search_seed": 42,
+    "holdout_seeds": [
+      3611,
+      6430,
+      39998
+    ],
+    "holdout_validation": "GPU7 worker\uff08validate_holdout.py\uff09\u5728\u641c\u7d22\u5b8c\u6210\u540e\u7528 best params \u8dd1 3611/6430/39998\uff0c\u4e0e\u539f\u59cb\u6b63\u5f0f baseline \u505a paired comparison",
+    "protocol": "epochs=30 patience=15 min_epochs=10 T_max=30 eta_min=lr*0.01",
+    "n_trials_requested": 12,
+    "max_epochs": 30,
+    "early_stopping_patience": 15,
+    "early_stopping_min_epochs": 10,
+    "sampler": "TPESampler(seed=2026+\u5df2\u6709\u8bb0\u5f55\u6761\u6570, n_startup_trials=4, multivariate=True) \u2014\u2014 \u79cd\u5b50\u968f trial \u53f7\u63a8\u8fdb\uff0c\u907f\u514d\u6bcf\u8fdb\u7a0b\u91cd\u653e RNG \u5bfc\u81f4\u63d0\u6848\u9501\u6b7b",
+    "pruner": "MedianPruner(n_startup_trials=4, n_warmup_steps=8, interval_steps=2)",
+    "trial0": "\u5f53\u524d v3 \u5b9e\u9645\u914d\u7f6e\uff08study.enqueue_trial\uff0c\u503c\u8bfb\u81ea\u78c1\u76d8 config.yaml\uff09",
+    "search_space": {
+      "learning_rate": [
+        5e-05,
+        0.0003,
+        "log"
+      ],
+      "weight_decay": [
+        1e-06,
+        0.0001,
+        "log"
+      ],
+      "dropout": [
+        0.05,
+        0.1,
+        0.15,
+        0.25,
+        0.35
+      ],
+      "residual_scale": [
+        0.05,
+        0.075,
+        0.1,
+        0.15,
+        0.2
+      ],
+      "tau": [
+        0.1,
+        0.15,
+        0.2,
+        0.3
+      ],
+      "prototype_momentum": [
+        0.95,
+        0.98,
+        0.99,
+        0.995
+      ]
+    }
+  },
+  "original_10runs": {
+    "seeds": [
+      42,
+      3611,
+      6430,
+      39998,
+      47521,
+      58376,
+      63065,
+      65134,
+      85286,
+      92061
+    ],
+    "n_completed": 10,
+    "auc_mean": 0.9378161965423111,
+    "auc_std": 0.007379018993854513,
+    "best_seed": 65134,
+    "best_auc": 0.9481852188858559
+  },
+  "optuna": {
+    "best_trial": 6,
+    "best_epoch": 10,
+    "best_auc": 0.9434435345263371,
+    "params": {
+      "learning_rate": 0.0002677669669382684,
+      "weight_decay": 9.33499580887342e-05,
+      "dropout": 0.15,
+      "residual_scale": 0.05,
+      "tau": 0.1,
+      "prototype_momentum": 0.995
+    },
+    "epochs_run": 25,
+    "metrics": {
+      "AUC": 0.9434435345263371,
+      "Accuracy": 0.902542372881356,
+      "Recall": 0.8789808917197452,
+      "Precision": 0.8363636363636363,
+      "F1": 0.8571428571428572,
+      "Specificity": 0.9142857142857143
+    },
+    "params_reached_in_model": {
+      "learning_rate": 2.0435285450715613e-05,
+      "weight_decay": 9.33499580887342e-05,
+      "dropout": 0.15,
+      "cross_branches": {
+        "PR": {
+          "residual_scale": 0.05000000074505806,
+          "tau": 0.1,
+          "beta": 0.995
+        },
+        "ER": {
+          "residual_scale": 0.05000000074505806,
+          "tau": 0.1,
+          "beta": 0.995
+        }
+      },
+      "eta_min": 2.677669669382684e-06
+    },
+    "n_completed": 10,
+    "n_pruned": 2,
+    "n_failed": 0,
+    "trials": [
+      {
+        "trial": 0,
+        "state": "COMPLETE",
+        "value": 0.9357193408148823,
+        "learning_rate": 0.000242,
+        "weight_decay": 7.59e-06,
+        "dropout": 0.05,
+        "residual_scale": 0.1,
+        "tau": 0.2,
+        "prototype_momentum": 0.99,
+        "best_epoch": 15,
+        "epochs_run": 30
+      },
+      {
+        "trial": 1,
+        "state": "COMPLETE",
+        "value": 0.9233950055606106,
+        "learning_rate": 7.407200227375529e-05,
+        "weight_decay": 6.699208178750483e-06,
+        "dropout": 0.35,
+        "residual_scale": 0.2,
+        "tau": 0.3,
+        "prototype_momentum": 0.995,
+        "best_epoch": 14,
+        "epochs_run": 29
+      },
+      {
+        "trial": 2,
+        "state": "COMPLETE",
+        "value": 0.9378020422606409,
+        "learning_rate": 0.00015235928481949627,
+        "weight_decay": 3.82939262369618e-05,
+        "dropout": 0.25,
+        "residual_scale": 0.05,
+        "tau": 0.15,
+        "prototype_momentum": 0.995,
+        "best_epoch": 8,
+        "epochs_run": 23
+      },
+      {
+        "trial": 3,
+        "state": "COMPLETE",
+        "value": 0.9374684056212716,
+        "learning_rate": 0.00015513246242123443,
+        "weight_decay": 2.2684559184314685e-05,
+        "dropout": 0.1,
+        "residual_scale": 0.05,
+        "tau": 0.2,
+        "prototype_momentum": 0.98,
+        "best_epoch": 17,
+        "epochs_run": 30
+      },
+      {
+        "trial": 4,
+        "state": "PRUNED",
+        "value": 0.9121221312304115,
+        "learning_rate": 9.306965513786177e-05,
+        "weight_decay": 8.535308692139746e-05,
+        "dropout": 0.25,
+        "residual_scale": 0.05,
+        "tau": 0.2,
+        "prototype_momentum": 0.995,
+        "best_epoch": null,
+        "epochs_run": null
+      },
+      {
+        "trial": 5,
+        "state": "COMPLETE",
+        "value": 0.9410979678495602,
+        "learning_rate": 0.0002345388642149419,
+        "weight_decay": 7.045858282146432e-05,
+        "dropout": 0.15,
+        "residual_scale": 0.05,
+        "tau": 0.15,
+        "prototype_momentum": 0.995,
+        "best_epoch": 24,
+        "epochs_run": 30
+      },
+      {
+        "trial": 6,
+        "state": "COMPLETE",
+        "value": 0.9434435345263371,
+        "learning_rate": 0.0002677669669382684,
+        "weight_decay": 9.33499580887342e-05,
+        "dropout": 0.15,
+        "residual_scale": 0.05,
+        "tau": 0.1,
+        "prototype_momentum": 0.995,
+        "best_epoch": 10,
+        "epochs_run": 25
+      },
+      {
+        "trial": 7,
+        "state": "COMPLETE",
+        "value": 0.9428773632595289,
+        "learning_rate": 0.0002749649311691492,
+        "weight_decay": 5.668756331415491e-05,
+        "dropout": 0.15,
+        "residual_scale": 0.075,
+        "tau": 0.1,
+        "prototype_momentum": 0.95,
+        "best_epoch": 14,
+        "epochs_run": 29
+      },
+      {
+        "trial": 8,
+        "state": "COMPLETE",
+        "value": 0.9380244666868871,
+        "learning_rate": 0.000270343719430415,
+        "weight_decay": 5.4293705703477416e-06,
+        "dropout": 0.05,
+        "residual_scale": 0.05,
+        "tau": 0.1,
+        "prototype_momentum": 0.995,
+        "best_epoch": 18,
+        "epochs_run": 30
+      },
+      {
+        "trial": 9,
+        "state": "COMPLETE",
+        "value": 0.9344656758669497,
+        "learning_rate": 8.867778915884516e-05,
+        "weight_decay": 2.5986032337495584e-05,
+        "dropout": 0.15,
+        "residual_scale": 0.15,
+        "tau": 0.1,
+        "prototype_momentum": 0.95,
+        "best_epoch": 10,
+        "epochs_run": 25
+      },
+      {
+        "trial": 10,
+        "state": "COMPLETE",
+        "value": 0.9369628955616216,
+        "learning_rate": 0.0001476299461550426,
+        "weight_decay": 8.068481000984333e-05,
+        "dropout": 0.05,
+        "residual_scale": 0.075,
+        "tau": 0.1,
+        "prototype_momentum": 0.995,
+        "best_epoch": 14,
+        "epochs_run": 29
+      },
+      {
+        "trial": 11,
+        "state": "PRUNED",
+        "value": 0.8954706298655344,
+        "learning_rate": 0.00027335161968838553,
+        "weight_decay": 5.570943728430726e-05,
+        "dropout": 0.15,
+        "residual_scale": 0.2,
+        "tau": 0.1,
+        "prototype_momentum": 0.95,
+        "best_epoch": null,
+        "epochs_run": null
+      }
+    ]
+  }
+}

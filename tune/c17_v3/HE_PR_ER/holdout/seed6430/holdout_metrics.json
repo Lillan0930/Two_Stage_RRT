@@ -1,0 +1,41 @@
+{
+  "combination": "HE+PR+ER",
+  "seed": 6430,
+  "auc": 0.913476898190274,
+  "best_epoch": 12,
+  "epochs_run": 27,
+  "metrics": {
+    "AUC": 0.913476898190274,
+    "Accuracy": 0.902542372881356,
+    "Recall": 0.7898089171974523,
+    "Precision": 0.9051094890510949,
+    "F1": 0.8435374149659864,
+    "Specificity": 0.9587301587301588
+  },
+  "params": {
+    "learning_rate": 0.0002677669669382684,
+    "weight_decay": 9.33499580887342e-05,
+    "dropout": 0.15,
+    "residual_scale": 0.05,
+    "tau": 0.1,
+    "prototype_momentum": 0.995
+  },
+  "params_reached": {
+    "learning_rate": 9.164866519987138e-06,
+    "weight_decay": 9.33499580887342e-05,
+    "dropout": 0.15,
+    "cross_branches": {
+      "PR": {
+        "residual_scale": 0.05000000074505806,
+        "tau": 0.1,
+        "beta": 0.995
+      },
+      "ER": {
+        "residual_scale": 0.05000000074505806,
+        "tau": 0.1,
+        "beta": 0.995
+      }
+    },
+    "eta_min": 2.677669669382684e-06
+  }
+}
